@@ -4,6 +4,12 @@ import cors from 'cors';
 import multer from 'multer';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getWhatsAppProvider } from './whatsapp/provider.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DIST_DIR = join(__dirname, '..', 'dist');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -206,6 +212,13 @@ app.post('/api/deliver-whatsapp-bulk', async (req, res) => {
     }
 });
 
+// Serve built frontend — Railway hosts everything, no Vercel needed
+if (existsSync(DIST_DIR)) {
+    app.use(express.static(DIST_DIR));
+    app.get('*', (_req, res) => res.sendFile(join(DIST_DIR, 'index.html')));
+    console.log(`Serving frontend from ${DIST_DIR}`);
+}
+
 app.listen(PORT, () => {
-    console.log(`M.O.M IQ server on port ${PORT} [provider: ${process.env.WHATSAPP_PROVIDER || 'stub'}]`);
+    console.log(`M.O.M IQ on port ${PORT} [provider: ${process.env.WHATSAPP_PROVIDER || 'stub'}]`);
 });

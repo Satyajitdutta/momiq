@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+// In production: same-origin /api (Express serves both frontend + API on Railway)
+// In local dev: proxied to localhost:3001 via vite.config.ts
+const API_BASE = '/api';
 
 export const generateNoteFromRecording = async (
     mediaBlob: Blob
