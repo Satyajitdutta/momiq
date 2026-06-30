@@ -1,0 +1,11 @@
+{
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ],
+  "name": "Conversation Note Taker & Summarizer",
+  "description": "Record conversations, generate summaries, and get transcripts instantly with this AI-powered note-taking app.",
+  "prompt": "",
+  "majorCapabilities": []
+}

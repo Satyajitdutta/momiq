@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M.O.M IQ — Meeting Intelligence by Pithonix AI</title>
+    <meta name="description" content="Record meetings, get AI-generated minutes, transcripts, and action items delivered straight to WhatsApp." />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="M.O.M IQ — Meeting Intelligence" />
+    <meta property="og:description" content="Record meetings, get AI-generated minutes, transcripts, and action items delivered straight to WhatsApp." />
+    <meta property="og:site_name" content="M.O.M IQ by Pithonix AI" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              'sans': ['Outfit', 'sans-serif'],
+              'display': ['Cormorant Garamond', 'serif'],
+            },
+            colors: {
+              'brand-bg': '#081510',
+              'brand-surface': '#0f2318',
+              'brand-primary': '#00d46e',
+              'brand-secondary': '#00b05c',
+              'text-primary': '#f0f7f4',
+              'text-secondary': '#7aab92',
+              'border-color': 'rgba(0, 212, 110, 0.15)',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+              'pulse-glow': 'pulseGlow 2s infinite ease-in-out',
+              'gradient-pan': 'gradientPan 3s ease infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              pulseGlow: {
+                '0%, 100%': { boxShadow: '0 0 20px rgba(0, 212, 110, 0.4)' },
+                '50%': { boxShadow: '0 0 35px rgba(0, 212, 110, 0.8)' },
+              },
+              gradientPan: {
+                '0%': { backgroundPosition: '0% 50%' },
+                '50%': { backgroundPosition: '100% 50%' },
+                '100%': { backgroundPosition: '0% 50%' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+  </head>
+  <body class="bg-brand-bg font-sans">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
