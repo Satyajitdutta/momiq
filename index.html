@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#050e09" />
     <title>M.O.M IQ — Meeting Intelligence by Pithonix AI</title>
     <meta name="description" content="Record meetings, get AI-generated minutes, transcripts, and action items delivered straight to WhatsApp." />
 
@@ -219,9 +223,43 @@
       *:focus-visible { outline: 1px solid rgba(0,212,110,0.6); outline-offset: 2px; }
 
       /* ── Checkbox custom ── */
-      input[type="checkbox"] {
-        accent-color: #00d46e;
+      input[type="checkbox"] { accent-color: #00d46e; }
+
+      /* ── iOS tap highlight removal ── */
+      * { -webkit-tap-highlight-color: transparent; }
+
+      /* ── Note card hover (desktop only) ── */
+      @media (hover: hover) {
+        .note-card:hover {
+          background: rgba(8,22,14,0.75) !important;
+          transform: translateX(2px);
+        }
+        .mode-card:hover {
+          border-color: rgba(0,212,110,0.35) !important;
+          transform: translateY(-3px);
+          box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,212,110,0.1);
+        }
+        .btn-glow:hover { box-shadow: 0 0 25px rgba(0,212,110,0.4); }
+        .glass-hover:hover {
+          background: rgba(10,26,16,0.75);
+          border-color: rgba(0,212,110,0.3);
+          transform: translateY(-2px);
+        }
       }
+
+      /* ── Safe area insets (iOS notch/home bar) ── */
+      body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+
+      /* ── Prevent text size adjust on orientation change (iOS) ── */
+      html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+      /* ── Smooth momentum scroll on iOS ── */
+      .overflow-y-auto { -webkit-overflow-scrolling: touch; }
     </style>
   </head>
   <body class="bg-brand-bg font-sans text-text-primary antialiased">

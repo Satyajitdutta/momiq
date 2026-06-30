@@ -137,11 +137,11 @@ const Btn: React.FC<{
     ariaLabel: string;
     disabled?: boolean;
 }> = ({ onClick, children, variant = 'ghost', className = '', ariaLabel, disabled = false }) => {
-    const base = 'flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-200 active:scale-95 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed font-display';
+    const base = 'flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl font-semibold text-sm transition-all duration-200 active:scale-95 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed font-display touch-manipulation select-none';
     const styles: Record<string, string> = {
-        primary: 'bg-brand-primary text-brand-bg hover:brightness-110',
-        ghost:   'text-text-primary hover:border-brand-primary/40',
-        danger:  'bg-red-900/40 text-red-400 border border-red-800/50 hover:bg-red-800/50 hover:border-red-600/50',
+        primary: 'bg-brand-primary text-brand-bg active:brightness-90',
+        ghost:   'text-text-primary',
+        danger:  'bg-red-900/40 text-red-400 border border-red-800/50 active:bg-red-800/50',
     };
     return (
         <button
@@ -274,19 +274,19 @@ const ResultView: React.FC<{
     return (
         <div className="w-full max-w-4xl mx-auto animate-fade-up">
             {/* Action bar */}
-            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div className="flex items-center justify-between mb-5 gap-3">
                 <Btn onClick={onBack} ariaLabel="Back">
-                    <ChevronLeftIcon className="w-4 h-4" /> All Notes
+                    <ChevronLeftIcon className="w-4 h-4" /> Back
                 </Btn>
                 <div className="flex gap-2">
-                    <Btn onClick={downloadTxt} ariaLabel="Download transcript as TXT">
+                    <Btn onClick={downloadTxt} ariaLabel="Download TXT">
                         <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">TXT</span>
                     </Btn>
-                    <Btn onClick={() => { exportToPdf(note); toast.success('PDF exported.'); }} ariaLabel="Export as PDF">
+                    <Btn onClick={() => { exportToPdf(note); toast.success('PDF exported.'); }} ariaLabel="PDF">
                         <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">PDF</span>
                     </Btn>
-                    <Btn onClick={handleDownloadAndDelete} variant="danger" ariaLabel="Download and delete" disabled={isMutating}>
-                        <TrashIcon className="w-4 h-4" /><span className="hidden sm:inline">{isMutating ? 'Deleting...' : 'Delete'}</span>
+                    <Btn onClick={handleDownloadAndDelete} variant="danger" ariaLabel="Delete" disabled={isMutating}>
+                        <TrashIcon className="w-4 h-4" /><span className="hidden sm:inline">{isMutating ? '...' : 'Delete'}</span>
                     </Btn>
                 </div>
             </div>
@@ -416,22 +416,14 @@ const NewNoteOptions: React.FC<{
                             <button key={id}
                                 onClick={() => id === 'upload' ? onUpload() : onSelect(id)}
                                 disabled={disabled}
-                                className="group relative flex flex-col items-center text-center p-7 rounded-xl border transition-all duration-250 disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="mode-card group relative flex flex-col items-center text-center p-6 sm:p-7 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 touch-manipulation select-none"
                                 style={{
                                     background: 'rgba(5,14,9,0.4)',
-                                    border: '1px solid rgba(0,212,110,0.1)',
+                                    border: '1px solid rgba(0,212,110,0.12)',
                                     backdropFilter: 'blur(12px)',
-                                    transition: 'all 0.25s cubic-bezier(0.22,0.61,0.36,1)',
-                                }}
-                                onMouseEnter={e => {
-                                    (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(0,212,110,0.35)';
-                                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-3px)';
-                                    (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 12px 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,212,110,0.1)';
-                                }}
-                                onMouseLeave={e => {
-                                    (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(0,212,110,0.1)';
-                                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-                                    (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                                    WebkitBackdropFilter: 'blur(12px)',
+                                    transition: 'all 0.2s cubic-bezier(0.22,0.61,0.36,1)',
+                                    minHeight: '140px',
                                 }}>
                                 <span className="absolute top-3 right-3 text-[9px] font-mono text-brand-primary/40 tracking-widest">{badge}</span>
                                 <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-4 transition-all duration-200"
@@ -481,23 +473,13 @@ const NoteCard: React.FC<{
 
     return (
         <div onClick={handleClick}
-            className={`group flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 animate-fade-up
+            className={`note-card group flex items-center gap-3 p-4 rounded-xl cursor-pointer animate-fade-up touch-manipulation select-none
                 ${busy && !isSelectionMode ? 'opacity-50 pointer-events-none' : ''}
                 ${isSelected ? 'ring-1 ring-brand-primary' : ''}`}
             style={{
                 ...GLASS_SUBTLE,
-                borderLeft: `2px solid ${statusColor}30`,
+                borderLeft: `2px solid ${statusColor}40`,
                 transition: 'all 0.2s cubic-bezier(0.22,0.61,0.36,1)',
-            }}
-            onMouseEnter={e => {
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = `${statusColor}80`;
-                (e.currentTarget as HTMLDivElement).style.background = 'rgba(8,22,14,0.7)';
-                (e.currentTarget as HTMLDivElement).style.transform = 'translateX(2px)';
-            }}
-            onMouseLeave={e => {
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = `${statusColor}30`;
-                (e.currentTarget as HTMLDivElement).style.background = 'rgba(5,14,9,0.5)';
-                (e.currentTarget as HTMLDivElement).style.transform = 'translateX(0)';
             }}>
 
             {isSelectionMode && (
@@ -734,58 +716,81 @@ const App = () => {
                 const empty = filteredNotes.length === 0;
                 return (
                     <div className="w-full max-w-4xl mx-auto animate-fade-up">
-                        {/* Toolbar */}
-                        <div className="flex justify-between items-center mb-5 flex-wrap gap-3">
-                            <div className="flex items-center gap-3">
-                                <h2 className="text-lg font-bold text-text-primary font-display tracking-tight">Notes</h2>
-                                {notes.length > 0 && (
-                                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '10px', letterSpacing: '0.08em', padding: '2px 7px', border: '1px solid rgba(0,212,110,0.2)', borderRadius: '2px', color: 'rgba(0,212,110,0.5)', background: 'rgba(0,212,110,0.04)' }}>
-                                        {notes.length}
-                                    </span>
+                        {/* Toolbar — stacks on mobile */}
+                        <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
+                            {/* Top row: title + new meeting */}
+                            <div className="flex items-center justify-between sm:justify-start gap-3">
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-lg font-bold text-text-primary font-display tracking-tight">Notes</h2>
+                                    {notes.length > 0 && (
+                                        <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '10px', letterSpacing: '0.08em', padding: '2px 7px', border: '1px solid rgba(0,212,110,0.2)', borderRadius: '2px', color: 'rgba(0,212,110,0.5)', background: 'rgba(0,212,110,0.04)' }}>
+                                            {notes.length}
+                                        </span>
+                                    )}
+                                </div>
+                                {/* New meeting — always visible top-right on mobile */}
+                                {!selectionMode && (
+                                    <Btn onClick={() => setView('new')} variant="primary" ariaLabel="New meeting" disabled={!!mutatingId} className="sm:hidden">
+                                        <PlusIcon className="w-4 h-4" /> New
+                                    </Btn>
+                                )}
+                                {selectionMode && (
+                                    <Btn onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} ariaLabel="Cancel" disabled={!!mutatingId} className="sm:hidden">Cancel</Btn>
                                 )}
                             </div>
-                            <div className="flex items-center gap-2">
-                                {/* Search */}
-                                <div className="relative">
+
+                            {/* Bottom row on mobile: search + controls */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {/* Search — full width on mobile */}
+                                <div className="relative flex-1 min-w-0">
                                     <SearchIcon className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                    <input type="text" placeholder="Search notes..." value={searchTerm}
+                                    <input type="text" placeholder="Search..." value={searchTerm}
                                         onChange={e => setSearchTerm(e.target.value)}
                                         disabled={!!mutatingId || selectionMode}
                                         style={{ ...GLASS_SUBTLE, border: '1px solid rgba(0,212,110,0.12)' }}
-                                        className="rounded-xl w-40 sm:w-52 py-2 pl-9 pr-4 text-text-primary text-sm placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-brand-primary/40 disabled:opacity-40 font-sans" />
+                                        className="rounded-xl w-full py-2.5 pl-9 pr-4 text-text-primary text-sm placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-brand-primary/40 disabled:opacity-40 font-sans" />
                                 </div>
 
                                 {/* Refresh */}
                                 <button onClick={async () => { if (mutatingId || isRefreshing) return; setIsRefreshing(true); await loadNotes(); setIsRefreshing(false); }}
                                     aria-label="Refresh" disabled={!!mutatingId || isRefreshing || selectionMode}
                                     style={GLASS_SUBTLE}
-                                    className={`p-2 text-text-secondary hover:text-brand-primary rounded-xl border border-brand-primary/10 transition-colors disabled:opacity-40 ${isRefreshing ? 'animate-spin' : ''}`}>
+                                    className={`min-w-[44px] h-[44px] flex items-center justify-center text-text-secondary rounded-xl border border-brand-primary/10 transition-colors disabled:opacity-40 touch-manipulation flex-shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}>
                                     <RefreshIcon className="w-4 h-4" />
                                 </button>
 
-                                {!selectionMode ? (
-                                    <>
+                                {/* Desktop-only extra controls */}
+                                {!selectionMode && (
+                                    <div className="hidden sm:flex items-center gap-2">
                                         {notes.length > 0 && (
                                             <Btn onClick={() => setSelectionMode(true)} ariaLabel="Select" disabled={!!mutatingId}>Select</Btn>
                                         )}
                                         {notes.length > 0 && (
                                             <Btn onClick={handleDeleteAll} variant="danger" ariaLabel="Delete all" disabled={!!mutatingId}>
-                                                <TrashIcon className="w-3.5 h-3.5" /><span className="hidden sm:inline">All</span>
+                                                <TrashIcon className="w-3.5 h-3.5" /> All
                                             </Btn>
                                         )}
                                         <Btn onClick={() => setView('new')} variant="primary" ariaLabel="New meeting" disabled={!!mutatingId}>
-                                            <PlusIcon className="w-4 h-4" /><span className="hidden sm:inline">New Meeting</span>
+                                            <PlusIcon className="w-4 h-4" /> New Meeting
                                         </Btn>
-                                    </>
-                                ) : (
-                                    <>
+                                    </div>
+                                )}
+                                {selectionMode && (
+                                    <div className="hidden sm:flex items-center gap-2">
                                         <Btn onClick={handleDeleteSelected} variant="danger" ariaLabel="Delete selected" disabled={!selectedIds.size || !!mutatingId}>
                                             <TrashIcon className="w-3.5 h-3.5" /> Delete ({selectedIds.size})
                                         </Btn>
                                         <Btn onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} ariaLabel="Cancel" disabled={!!mutatingId}>Cancel</Btn>
-                                    </>
+                                    </div>
                                 )}
                             </div>
+
+                            {/* Mobile-only selection actions */}
+                            {selectionMode && selectedIds.size > 0 && (
+                                <Btn onClick={handleDeleteSelected} variant="danger" ariaLabel="Delete selected" disabled={!!mutatingId} className="sm:hidden w-full">
+                                    <TrashIcon className="w-3.5 h-3.5" /> Delete {selectedIds.size} selected
+                                </Btn>
+                            )}
                         </div>
 
                         {/* Note list */}
@@ -831,12 +836,12 @@ const App = () => {
             <div className="h-px w-full fixed top-0 z-50"
                 style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,110,0.6) 30%, rgba(0,255,135,0.9) 50%, rgba(0,212,110,0.6) 70%, transparent)' }} />
 
-            <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+            <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-14 pb-safe">
                 {/* Header */}
-                <header className="text-center mb-12">
+                <header className="text-center mb-8 sm:mb-12">
                     {/* Wordmark */}
                     <div className="inline-flex items-baseline gap-3 mb-3">
-                        <h1 className="font-display font-bold text-5xl sm:text-6xl tracking-tight shimmer-text"
+                        <h1 className="font-display font-bold text-4xl sm:text-6xl tracking-tight shimmer-text"
                             style={{
                                 background: 'linear-gradient(90deg, #00d46e 0%, #00ff87 30%, #7affcd 50%, #00ff87 70%, #00d46e 100%)',
                                 backgroundSize: '200% auto',
