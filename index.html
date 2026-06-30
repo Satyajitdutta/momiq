@@ -14,50 +14,217 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              'sans': ['Outfit', 'sans-serif'],
-              'display': ['Cormorant Garamond', 'serif'],
+              'sans': ['DM Sans', 'Inter', 'sans-serif'],
+              'display': ['Space Grotesk', 'sans-serif'],
+              'mono': ['Space Mono', 'monospace'],
+              'serif': ['Cormorant Garamond', 'serif'],
             },
             colors: {
-              'brand-bg': '#081510',
-              'brand-surface': '#0f2318',
-              'brand-primary': '#00d46e',
-              'brand-secondary': '#00b05c',
-              'text-primary': '#f0f7f4',
-              'text-secondary': '#7aab92',
-              'border-color': 'rgba(0, 212, 110, 0.15)',
+              'brand-bg':       '#050e09',
+              'brand-surface':  '#0a1a10',
+              'brand-glass':    'rgba(8,20,12,0.65)',
+              'brand-primary':  '#00d46e',
+              'brand-secondary':'#00ff87',
+              'brand-dim':      '#004d28',
+              'text-primary':   '#e8f5ee',
+              'text-secondary': '#5d9478',
+              'text-muted':     '#2d5c40',
+              'border-color':   'rgba(0,212,110,0.12)',
+              'border-bright':  'rgba(0,212,110,0.35)',
             },
             animation: {
-              'fade-in': 'fadeIn 0.5s ease-out forwards',
-              'pulse-glow': 'pulseGlow 2s infinite ease-in-out',
-              'gradient-pan': 'gradientPan 3s ease infinite',
+              'fade-up':        'fadeUp 0.4s cubic-bezier(0.22,0.61,0.36,1) forwards',
+              'fade-in':        'fadeIn 0.3s ease-out forwards',
+              'slide-right':    'slideRight 0.4s cubic-bezier(0.22,0.61,0.36,1) forwards',
+              'glow-pulse':     'glowPulse 2.5s ease-in-out infinite',
+              'float':          'float 6s ease-in-out infinite',
+              'shimmer':        'shimmer 2s linear infinite',
+              'scan':           'scan 3s ease-in-out infinite',
+              'spin-slow':      'spin 3s linear infinite',
+              'breathe':        'breathe 4s ease-in-out infinite',
             },
             keyframes: {
-              fadeIn: {
-                '0%': { opacity: '0', transform: 'translateY(10px)' },
+              fadeUp: {
+                '0%':   { opacity: '0', transform: 'translateY(18px)' },
                 '100%': { opacity: '1', transform: 'translateY(0)' },
               },
-              pulseGlow: {
-                '0%, 100%': { boxShadow: '0 0 20px rgba(0, 212, 110, 0.4)' },
-                '50%': { boxShadow: '0 0 35px rgba(0, 212, 110, 0.8)' },
+              fadeIn: {
+                '0%':   { opacity: '0' },
+                '100%': { opacity: '1' },
               },
-              gradientPan: {
-                '0%': { backgroundPosition: '0% 50%' },
-                '50%': { backgroundPosition: '100% 50%' },
-                '100%': { backgroundPosition: '0% 50%' },
-              }
-            }
+              slideRight: {
+                '0%':   { opacity: '0', transform: 'translateX(-14px)' },
+                '100%': { opacity: '1', transform: 'translateX(0)' },
+              },
+              glowPulse: {
+                '0%,100%': { boxShadow: '0 0 20px rgba(0,212,110,0.3), 0 0 60px rgba(0,212,110,0.1)' },
+                '50%':     { boxShadow: '0 0 35px rgba(0,212,110,0.6), 0 0 80px rgba(0,212,110,0.2)' },
+              },
+              float: {
+                '0%,100%': { transform: 'translateY(0px)' },
+                '50%':     { transform: 'translateY(-8px)' },
+              },
+              shimmer: {
+                '0%':   { backgroundPosition: '-200% center' },
+                '100%': { backgroundPosition: '200% center' },
+              },
+              scan: {
+                '0%,100%': { opacity: '0.3' },
+                '50%':     { opacity: '0.7' },
+              },
+              breathe: {
+                '0%,100%': { opacity: '0.4', transform: 'scale(1)' },
+                '50%':     { opacity: '0.8', transform: 'scale(1.02)' },
+              },
+            },
+            boxShadow: {
+              'glow-sm':  '0 0 15px rgba(0,212,110,0.25)',
+              'glow':     '0 0 30px rgba(0,212,110,0.35)',
+              'glow-lg':  '0 0 60px rgba(0,212,110,0.25)',
+              'glass':    '0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(0,212,110,0.08)',
+              'card':     '0 4px 24px rgba(0,0,0,0.5)',
+              'card-hover':'0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,212,110,0.25)',
+            },
+            backdropBlur: {
+              'glass': '24px',
+            },
           }
         }
       }
     </script>
+
+    <style>
+      /* ── Dot-grid animated background ── */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image:
+          radial-gradient(circle at 25% 75%, rgba(0,212,110,0.06) 0%, transparent 50%),
+          radial-gradient(circle at 75% 25%, rgba(0,212,110,0.04) 0%, transparent 50%);
+        pointer-events: none;
+        z-index: 0;
+      }
+      body::after {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: radial-gradient(rgba(0,212,110,0.07) 1px, transparent 1px);
+        background-size: 32px 32px;
+        pointer-events: none;
+        z-index: 0;
+      }
+      #root { position: relative; z-index: 1; }
+
+      /* ── Glass panel ── */
+      .glass {
+        background: rgba(8,20,13,0.65);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(0,212,110,0.12);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(0,212,110,0.07);
+      }
+      .glass-hover {
+        transition: all 0.25s cubic-bezier(0.22,0.61,0.36,1);
+      }
+      .glass-hover:hover {
+        background: rgba(10,26,16,0.75);
+        border-color: rgba(0,212,110,0.3);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,212,110,0.2), 0 0 30px rgba(0,212,110,0.08);
+        transform: translateY(-2px);
+      }
+
+      /* ── Shimmer text ── */
+      .shimmer-text {
+        background: linear-gradient(90deg, #00d46e 0%, #00ff87 30%, #7affcd 50%, #00ff87 70%, #00d46e 100%);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: shimmer 4s linear infinite;
+      }
+
+      /* ── Glow button ── */
+      .btn-glow {
+        position: relative;
+        overflow: hidden;
+        transition: all 0.2s ease;
+      }
+      .btn-glow::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at center, rgba(0,212,110,0.3) 0%, transparent 70%);
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .btn-glow:hover::before { opacity: 1; }
+      .btn-glow:hover { box-shadow: 0 0 25px rgba(0,212,110,0.4); }
+
+      /* ── Top accent bar ── */
+      .top-bar {
+        background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(0,212,110,0.4) 20%,
+          rgba(0,255,135,0.8) 50%,
+          rgba(0,212,110,0.4) 80%,
+          transparent 100%);
+        height: 1px;
+        width: 100%;
+      }
+
+      /* ── Scan line ── */
+      .scan-line {
+        position: relative;
+        overflow: hidden;
+      }
+      .scan-line::after {
+        content: '';
+        position: absolute;
+        left: 0; right: 0; top: -100%;
+        height: 100%;
+        background: linear-gradient(to bottom, transparent 0%, rgba(0,212,110,0.04) 50%, transparent 100%);
+        animation: scanMove 4s ease-in-out infinite;
+      }
+      @keyframes scanMove {
+        0%   { top: -100%; }
+        100% { top: 100%; }
+      }
+
+      /* ── Data badge ── */
+      .data-badge {
+        font-family: 'Space Mono', monospace;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        padding: 2px 8px;
+        border: 1px solid rgba(0,212,110,0.25);
+        border-radius: 2px;
+        color: rgba(0,212,110,0.6);
+        background: rgba(0,212,110,0.05);
+      }
+
+      /* ── Custom scrollbar ── */
+      ::-webkit-scrollbar { width: 4px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(0,212,110,0.3); border-radius: 2px; }
+
+      /* ── Focus ring ── */
+      *:focus-visible { outline: 1px solid rgba(0,212,110,0.6); outline-offset: 2px; }
+
+      /* ── Checkbox custom ── */
+      input[type="checkbox"] {
+        accent-color: #00d46e;
+      }
+    </style>
   </head>
-  <body class="bg-brand-bg font-sans">
+  <body class="bg-brand-bg font-sans text-text-primary antialiased">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

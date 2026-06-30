@@ -13,12 +13,11 @@ const LOCAL_STORAGE_MAX_BYTES = 15 * 1024 * 1024;
 
 // ─── Speaker colour coding ───────────────────────────────────────────────────
 
-// Generate a distinct, readable colour for any speaker number using golden-ratio HSL rotation
 const speakerColorCache: Record<number, string> = {};
 function getSpeakerColor(n: number): string {
     if (!speakerColorCache[n]) {
-        const hue = (n * 137.508) % 360; // golden angle — maximally spaced hues
-        speakerColorCache[n] = `hsl(${hue}, 80%, 65%)`;
+        const hue = (n * 137.508) % 360;
+        speakerColorCache[n] = `hsl(${hue}, 75%, 60%)`;
     }
     return speakerColorCache[n];
 }
@@ -28,7 +27,11 @@ function renderTranscription(text: string): React.ReactNode {
     return parts.map((part, i) => {
         const match = part.match(/^Speaker (\d+):$/);
         if (match) {
-            return <span key={i} style={{ color: getSpeakerColor(parseInt(match[1], 10)), fontWeight: 700 }}>{part}</span>;
+            return (
+                <span key={i} style={{ color: getSpeakerColor(parseInt(match[1], 10)), fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>
+                    {part}
+                </span>
+            );
         }
         return <span key={i}>{part}</span>;
     });
@@ -55,23 +58,23 @@ const exportToPdf = (note: Note) => {
         y += 3;
     };
 
-    line(note.title || 'Meeting Minutes', 18, true, [0, 100, 52]);
-    line('M.O.M IQ — Minutes of Meeting Intelligence by Pithonix AI', 9, false, [80, 120, 100]);
-    line(new Date(note.timestamp).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' }), 10, false, [80, 120, 100]);
+    line(note.title || 'Meeting Minutes', 18, true, [0, 180, 90]);
+    line('M.O.M IQ — Minutes of Meeting Intelligence by Pithonix AI', 9, false, [80, 140, 110]);
+    line(new Date(note.timestamp).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' }), 10, false, [80, 140, 110]);
     y += 4;
 
-    line('Summary', 13, true, [0, 100, 52]);
+    line('Summary', 13, true, [0, 180, 90]);
     line(note.summary || '', 10);
     y += 2;
 
     if (note.actionItems?.length) {
-        line('Action Items', 13, true, [0, 100, 52]);
+        line('Action Items', 13, true, [0, 180, 90]);
         note.actionItems.forEach((item, i) => line(`${i + 1}. ${item}`, 10));
         y += 2;
     }
 
     if (note.transcription) {
-        line('Full Transcription', 13, true, [0, 100, 52]);
+        line('Full Transcription', 13, true, [0, 180, 90]);
         line(note.transcription, 9);
     }
 
@@ -107,29 +110,90 @@ const getApiErrorMessage = (e: any): string => {
     catch { return e.message || 'Unknown error.'; }
 };
 
+// ─── Design tokens (inline styles) ───────────────────────────────────────────
+
+const GLASS = {
+    background: 'rgba(8,20,13,0.65)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    border: '1px solid rgba(0,212,110,0.12)',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(0,212,110,0.07)',
+} as const;
+
+const GLASS_SUBTLE = {
+    background: 'rgba(5,14,9,0.5)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    border: '1px solid rgba(0,212,110,0.08)',
+} as const;
+
 // ─── Shared button ───────────────────────────────────────────────────────────
 
 const Btn: React.FC<{
     onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
     children: React.ReactNode;
+    variant?: 'primary' | 'ghost' | 'danger';
     className?: string;
     ariaLabel: string;
     disabled?: boolean;
-}> = ({ onClick, children, className = '', ariaLabel, disabled = false }) => (
-    <button onClick={onClick} aria-label={ariaLabel} disabled={disabled}
-        className={`flex items-center justify-center px-4 py-2 font-semibold text-text-primary rounded-full transition-all duration-200 active:scale-95 focus:outline-none focus:ring-4 focus:ring-brand-primary/40 disabled:opacity-40 disabled:cursor-not-allowed ${className}`}>
-        {children}
-    </button>
-);
+}> = ({ onClick, children, variant = 'ghost', className = '', ariaLabel, disabled = false }) => {
+    const base = 'flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-200 active:scale-95 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed font-display';
+    const styles: Record<string, string> = {
+        primary: 'bg-brand-primary text-brand-bg hover:brightness-110',
+        ghost:   'text-text-primary hover:border-brand-primary/40',
+        danger:  'bg-red-900/40 text-red-400 border border-red-800/50 hover:bg-red-800/50 hover:border-red-600/50',
+    };
+    return (
+        <button
+            onClick={onClick}
+            aria-label={ariaLabel}
+            disabled={disabled}
+            style={variant === 'ghost' ? {
+                ...GLASS_SUBTLE,
+                border: '1px solid rgba(0,212,110,0.15)',
+                transition: 'all 0.2s ease',
+            } : variant === 'primary' ? {
+                boxShadow: '0 0 20px rgba(0,212,110,0.25)',
+            } : undefined}
+            className={`${base} ${styles[variant]} ${className}`}
+        >
+            {children}
+        </button>
+    );
+};
+
+// ─── Loader ──────────────────────────────────────────────────────────────────
 
 const Loader: React.FC<{ message: string }> = ({ message }) => (
-    <div className="flex flex-col items-center justify-center p-8 bg-brand-surface/50 backdrop-blur-md border border-border-color rounded-3xl shadow-2xl w-full max-w-md mx-auto text-text-primary animate-fade-in">
-        <svg className="animate-spin h-12 w-12 text-brand-primary mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-        </svg>
-        <p className="text-lg font-semibold">{message}</p>
-        <p className="text-sm text-text-secondary mt-1">Generating your minutes...</p>
+    <div className="flex flex-col items-center justify-center p-10 w-full max-w-sm mx-auto animate-fade-up">
+        <div className="relative mb-6">
+            <div className="w-16 h-16 rounded-full border-2 border-text-muted/30" />
+            <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-transparent border-t-brand-primary animate-spin" />
+            <div className="absolute inset-2 w-12 h-12 rounded-full border border-brand-primary/20 animate-breathe" />
+        </div>
+        <p className="text-lg font-semibold text-text-primary font-display tracking-tight">{message}</p>
+        <p className="text-sm text-text-secondary mt-1 font-mono">Gemini 2.5 Flash processing...</p>
+        <div className="mt-4 flex gap-1.5">
+            {[0, 1, 2].map(i => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full bg-brand-primary"
+                    style={{ animation: `breathe 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
+        </div>
+    </div>
+);
+
+// ─── Section panel ───────────────────────────────────────────────────────────
+
+const Panel: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+    <div style={GLASS_SUBTLE} className={`rounded-xl p-5 ${className}`}>
+        {children}
+    </div>
+);
+
+const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="flex items-center gap-3 mb-3">
+        <div className="w-1 h-4 rounded-full bg-brand-primary" />
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-text-secondary font-mono">{children}</h2>
     </div>
 );
 
@@ -176,90 +240,141 @@ const ResultView: React.FC<{
     };
 
     if (note.status === 'failed') return (
-        <div className="w-full max-w-4xl mx-auto bg-brand-surface/50 backdrop-blur-md border border-border-color rounded-3xl p-4 sm:p-8 animate-fade-in text-center relative">
-            <Btn onClick={onBack} className="bg-brand-surface/80 hover:bg-brand-surface absolute top-4 left-4" ariaLabel="Back">
-                <ChevronLeftIcon className="w-6 h-6" /><span className="ml-2">All Notes</span>
+        <div className="w-full max-w-4xl mx-auto rounded-2xl p-6 sm:p-8 animate-fade-up" style={GLASS}>
+            <Btn onClick={onBack} ariaLabel="Back" className="mb-6">
+                <ChevronLeftIcon className="w-4 h-4" /> Back
             </Btn>
-            <h2 className="text-2xl font-bold text-red-400 mb-4 mt-16">Processing Failed</h2>
-            <p className="text-text-secondary mb-6">{note.error || 'Unknown error.'}</p>
-            <div className="flex justify-center gap-3">
-                <Btn onClick={() => onRetry(note.id)} className="bg-brand-primary hover:bg-brand-secondary text-brand-bg" ariaLabel="Retry" disabled={isMutating}>
-                    {isMutating ? 'Retrying...' : 'Retry'}
-                </Btn>
-                <Btn onClick={async (e) => {
-                    e.currentTarget.disabled = true;
-                    if (window.confirm('Delete this failed note permanently?')) await onDelete(note.id, false);
-                    else e.currentTarget.disabled = false;
-                }} className="bg-red-600 hover:bg-red-700" ariaLabel="Delete" disabled={isMutating}>
-                    <TrashIcon className="w-5 h-5 mr-2" />Delete
-                </Btn>
+            <div className="text-center py-6">
+                <div className="w-16 h-16 rounded-full bg-red-900/30 border border-red-700/30 flex items-center justify-center mx-auto mb-4">
+                    <span className="text-2xl">✕</span>
+                </div>
+                <h2 className="text-xl font-bold text-red-400 mb-3 font-display">Processing Failed</h2>
+                <p className="text-text-secondary mb-6 text-sm max-w-md mx-auto">{note.error || 'Unknown error occurred.'}</p>
+                <div className="flex justify-center gap-3">
+                    <Btn onClick={() => onRetry(note.id)} variant="primary" ariaLabel="Retry" disabled={isMutating}>
+                        {isMutating ? 'Retrying...' : 'Retry'}
+                    </Btn>
+                    <Btn onClick={async (e) => {
+                        e.currentTarget.disabled = true;
+                        if (window.confirm('Delete this failed note permanently?')) await onDelete(note.id, false);
+                        else e.currentTarget.disabled = false;
+                    }} variant="danger" ariaLabel="Delete" disabled={isMutating}>
+                        <TrashIcon className="w-4 h-4" /> Delete
+                    </Btn>
+                </div>
             </div>
         </div>
     );
 
-    if (note.status === 'processing') return <Loader message="Just a moment..." />;
+    if (note.status === 'processing') return <Loader message="Analysing your meeting..." />;
+
+    const completedCount = completedItems.length;
+    const totalItems = note.actionItems?.length || 0;
 
     return (
-        <div className="w-full max-w-4xl mx-auto bg-brand-surface/50 backdrop-blur-md border border-border-color rounded-3xl shadow-2xl p-4 sm:p-8 animate-fade-in">
-            <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-                <Btn onClick={onBack} className="bg-brand-surface/80 hover:bg-brand-surface" ariaLabel="Back">
-                    <ChevronLeftIcon className="w-6 h-6" /><span className="ml-2">All Notes</span>
+        <div className="w-full max-w-4xl mx-auto animate-fade-up">
+            {/* Action bar */}
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+                <Btn onClick={onBack} ariaLabel="Back">
+                    <ChevronLeftIcon className="w-4 h-4" /> All Notes
                 </Btn>
                 <div className="flex gap-2">
-                    <Btn onClick={downloadTxt} className="bg-brand-surface/80 hover:bg-brand-surface" ariaLabel="Download transcript as TXT">
-                        <DownloadIcon className="w-5 h-5" /><span className="ml-2 hidden sm:inline">TXT</span>
+                    <Btn onClick={downloadTxt} ariaLabel="Download transcript as TXT">
+                        <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">TXT</span>
                     </Btn>
-                    <Btn onClick={() => { exportToPdf(note); toast.success('PDF exported.'); }} className="bg-brand-surface/80 hover:bg-brand-surface" ariaLabel="Export as PDF">
-                        <DownloadIcon className="w-5 h-5" /><span className="ml-2 hidden sm:inline">PDF</span>
+                    <Btn onClick={() => { exportToPdf(note); toast.success('PDF exported.'); }} ariaLabel="Export as PDF">
+                        <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">PDF</span>
                     </Btn>
-                    <Btn onClick={handleDownloadAndDelete} className="bg-red-700 hover:bg-red-600" ariaLabel="Download and delete" disabled={isMutating}>
-                        <TrashIcon className="w-5 h-5" /><span className="ml-2 hidden sm:inline">{isMutating ? 'Deleting...' : 'Download & Delete'}</span>
+                    <Btn onClick={handleDownloadAndDelete} variant="danger" ariaLabel="Download and delete" disabled={isMutating}>
+                        <TrashIcon className="w-4 h-4" /><span className="hidden sm:inline">{isMutating ? 'Deleting...' : 'Delete'}</span>
                     </Btn>
                 </div>
             </div>
 
-            <div className="space-y-5">
-                {note.mediaUrl && note.recordingType === 'voice'
-                    ? <audio controls src={note.mediaUrl} className="w-full" />
-                    : note.mediaUrl && note.recordingType === 'screen'
-                        ? <video controls src={note.mediaUrl} className="w-full rounded-lg bg-black aspect-video" />
-                        : <div className="bg-brand-bg/50 p-4 rounded-xl text-text-secondary text-center text-sm">Media not stored locally (file too large).</div>
-                }
+            {/* Main glass container */}
+            <div className="rounded-2xl overflow-hidden" style={GLASS}>
+                {/* Header strip */}
+                <div className="h-px w-full" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,110,0.5), transparent)' }} />
 
-                {note.title && (
-                    <div className="bg-brand-bg/50 p-5 rounded-xl">
-                        <h1 className="text-3xl font-display font-bold text-brand-primary leading-tight">{note.title}</h1>
-                        {note.sessionInfo && <p className="text-sm text-text-secondary mt-1">Part {note.sessionInfo.part}</p>}
-                    </div>
-                )}
+                <div className="p-6 sm:p-8 space-y-5">
+                    {/* Media player */}
+                    {note.mediaUrl && note.recordingType === 'voice' && (
+                        <audio controls src={note.mediaUrl} className="w-full rounded-lg" style={{ accentColor: '#00d46e' }} />
+                    )}
+                    {note.mediaUrl && note.recordingType === 'screen' && (
+                        <video controls src={note.mediaUrl} className="w-full rounded-xl bg-black aspect-video" />
+                    )}
+                    {!note.mediaUrl && (
+                        <div className="py-3 px-4 rounded-lg text-text-muted text-xs font-mono text-center"
+                            style={{ border: '1px dashed rgba(0,212,110,0.1)', background: 'rgba(0,0,0,0.2)' }}>
+                            [ media not cached locally — file size exceeded threshold ]
+                        </div>
+                    )}
 
-                <div className="bg-brand-bg/50 p-5 rounded-xl">
-                    <h2 className="text-lg font-bold text-text-primary mb-2">Summary</h2>
-                    <p className="text-text-secondary leading-relaxed">{note.summary}</p>
-                </div>
+                    {/* Title block */}
+                    {note.title && (
+                        <div>
+                            <p className="text-xs font-mono text-text-muted uppercase tracking-widest mb-2">
+                                {new Date(note.timestamp).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' })}
+                                {note.sessionInfo && <span className="ml-3 text-brand-primary/60">· Part {note.sessionInfo.part}</span>}
+                            </p>
+                            <h1 className="text-2xl sm:text-3xl font-bold text-text-primary font-display leading-tight"
+                                style={{ letterSpacing: '-0.02em' }}>
+                                {note.title}
+                            </h1>
+                        </div>
+                    )}
 
-                <div className="bg-brand-bg/50 p-5 rounded-xl">
-                    <h2 className="text-lg font-bold text-text-primary mb-3">Action Items</h2>
-                    <div className="space-y-3">
-                        {note.actionItems?.length ? note.actionItems.map((item, i) => (
-                            <div key={i} className="flex items-start gap-3">
-                                <input type="checkbox" id={`ai-${i}`} checked={completedItems.includes(i)}
-                                    onChange={() => toggleItem(i)}
-                                    className="mt-1 w-5 h-5 bg-transparent border-2 border-brand-primary rounded text-brand-primary focus:ring-brand-primary cursor-pointer flex-shrink-0" />
-                                <label htmlFor={`ai-${i}`}
-                                    className={`cursor-pointer leading-relaxed ${completedItems.includes(i) ? 'line-through text-text-secondary/40' : 'text-text-secondary'}`}>
-                                    {item}
-                                </label>
+                    {/* Summary */}
+                    <Panel>
+                        <SectionLabel>Executive Summary</SectionLabel>
+                        <p className="text-text-secondary leading-relaxed text-sm">{note.summary}</p>
+                    </Panel>
+
+                    {/* Action items */}
+                    <Panel>
+                        <div className="flex items-center justify-between mb-3">
+                            <SectionLabel>Action Items</SectionLabel>
+                            {totalItems > 0 && (
+                                <span className="data-badge"
+                                    style={{ fontFamily: "'Space Mono', monospace", fontSize: '10px', letterSpacing: '0.1em', padding: '2px 8px', border: '1px solid rgba(0,212,110,0.25)', borderRadius: '2px', color: 'rgba(0,212,110,0.6)', background: 'rgba(0,212,110,0.05)' }}>
+                                    {completedCount}/{totalItems}
+                                </span>
+                            )}
+                        </div>
+                        {totalItems > 0 && (
+                            <div className="mb-3 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(0,212,110,0.1)' }}>
+                                <div className="h-full rounded-full bg-brand-primary transition-all duration-500"
+                                    style={{ width: `${totalItems ? (completedCount / totalItems) * 100 : 0}%`, boxShadow: '0 0 8px rgba(0,212,110,0.5)' }} />
                             </div>
-                        )) : <p className="text-text-secondary/60">No action items identified.</p>}
-                    </div>
-                </div>
+                        )}
+                        <div className="space-y-2.5">
+                            {note.actionItems?.length ? note.actionItems.map((item, i) => (
+                                <div key={i} className="flex items-start gap-3 group">
+                                    <div className="relative mt-0.5 flex-shrink-0">
+                                        <input type="checkbox" id={`ai-${i}`} checked={completedItems.includes(i)}
+                                            onChange={() => toggleItem(i)}
+                                            className="w-4 h-4 cursor-pointer rounded" />
+                                    </div>
+                                    <label htmlFor={`ai-${i}`}
+                                        className={`cursor-pointer text-sm leading-relaxed transition-all duration-200 ${completedItems.includes(i)
+                                            ? 'line-through text-text-muted'
+                                            : 'text-text-secondary group-hover:text-text-primary'}`}>
+                                        {item}
+                                    </label>
+                                </div>
+                            )) : <p className="text-text-muted text-sm font-mono">// no action items identified</p>}
+                        </div>
+                    </Panel>
 
-                <div className="bg-brand-bg/50 p-5 rounded-xl">
-                    <h2 className="text-lg font-bold text-text-primary mb-3">Full Transcription</h2>
-                    <div className="max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
-                        {renderTranscription(note.transcription || '')}
-                    </div>
+                    {/* Transcription */}
+                    <Panel>
+                        <SectionLabel>Full Transcription</SectionLabel>
+                        <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-text-secondary font-mono pr-2"
+                            style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(0,212,110,0.2) transparent' }}>
+                            {renderTranscription(note.transcription || '')}
+                        </div>
+                    </Panel>
                 </div>
             </div>
         </div>
@@ -273,37 +388,66 @@ const NewNoteOptions: React.FC<{
     onUpload: () => void;
     onCancel: () => void;
     disabled: boolean;
-}> = ({ onSelect, onUpload, onCancel, disabled }) => (
-    <div className="w-full max-w-4xl mx-auto bg-brand-surface/50 backdrop-blur-md border border-border-color rounded-3xl shadow-2xl p-6 sm:p-8 animate-fade-in">
-        <div className="relative flex items-center justify-center mb-6">
-            <button onClick={onCancel} disabled={disabled} aria-label="Back"
-                className="absolute left-0 top-1/2 -translate-y-1/2 text-text-secondary hover:text-white disabled:opacity-40">
-                <ChevronLeftIcon className="w-8 h-8" />
-            </button>
-            <h2 className="text-2xl font-bold text-text-primary">New Meeting</h2>
+}> = ({ onSelect, onUpload, onCancel, disabled }) => {
+    const options = [
+        { id: 'voice' as const, Icon: MicIcon, label: 'Voice Recording', sub: 'Capture from microphone', badge: 'MIC' },
+        { id: 'screen' as const, Icon: ScreenRecordIcon, label: 'Screen + Audio', sub: 'Record screen & speaker', badge: 'SCREEN' },
+        { id: 'upload' as const, Icon: UploadIcon, label: 'File Upload', sub: 'Audio or video · No size limit', badge: 'UPLOAD' },
+    ];
+
+    return (
+        <div className="w-full max-w-4xl mx-auto animate-fade-up">
+            <div className="rounded-2xl overflow-hidden" style={GLASS}>
+                <div className="h-px w-full" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,110,0.5), transparent)' }} />
+                <div className="p-6 sm:p-8">
+                    <div className="flex items-center gap-4 mb-8">
+                        <button onClick={onCancel} disabled={disabled} aria-label="Back"
+                            className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
+                            style={GLASS_SUBTLE}>
+                            <ChevronLeftIcon className="w-5 h-5" />
+                        </button>
+                        <div>
+                            <h2 className="text-xl font-bold text-text-primary font-display tracking-tight">New Meeting</h2>
+                            <p className="text-xs text-text-secondary font-mono mt-0.5">Select capture method</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {options.map(({ id, Icon, label, sub, badge }) => (
+                            <button key={id}
+                                onClick={() => id === 'upload' ? onUpload() : onSelect(id)}
+                                disabled={disabled}
+                                className="group relative flex flex-col items-center text-center p-7 rounded-xl border transition-all duration-250 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{
+                                    background: 'rgba(5,14,9,0.4)',
+                                    border: '1px solid rgba(0,212,110,0.1)',
+                                    backdropFilter: 'blur(12px)',
+                                    transition: 'all 0.25s cubic-bezier(0.22,0.61,0.36,1)',
+                                }}
+                                onMouseEnter={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(0,212,110,0.35)';
+                                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-3px)';
+                                    (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 12px 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,212,110,0.1)';
+                                }}
+                                onMouseLeave={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.border = '1px solid rgba(0,212,110,0.1)';
+                                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                                    (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                                }}>
+                                <span className="absolute top-3 right-3 text-[9px] font-mono text-brand-primary/40 tracking-widest">{badge}</span>
+                                <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-4 transition-all duration-200"
+                                    style={{ background: 'rgba(0,212,110,0.08)', border: '1px solid rgba(0,212,110,0.12)' }}>
+                                    <Icon className="w-7 h-7 text-brand-primary" />
+                                </div>
+                                <h3 className="text-base font-semibold text-text-primary font-display mb-1">{label}</h3>
+                                <p className="text-xs text-text-secondary">{sub}</p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
-        <p className="text-center text-text-secondary mb-8">How do you want to capture this meeting?</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {([
-                { mode: 'voice' as const, Icon: MicIcon, label: 'Record Voice', sub: 'From your microphone.' },
-                { mode: 'screen' as const, Icon: ScreenRecordIcon, label: 'Record Screen', sub: 'Capture screen and audio.' },
-            ] as const).map(({ mode, Icon, label, sub }) => (
-                <button key={mode} onClick={() => onSelect(mode)} disabled={disabled}
-                    className="flex flex-col items-center text-center p-8 bg-brand-surface/70 text-text-primary rounded-2xl border border-transparent hover:border-brand-primary hover:bg-brand-surface transition-all duration-200 hover:-translate-y-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
-                    <Icon className="w-14 h-14 mb-4 text-brand-primary" />
-                    <h3 className="text-xl font-semibold">{label}</h3>
-                    <p className="text-sm text-text-secondary mt-1">{sub}</p>
-                </button>
-            ))}
-            <button onClick={onUpload} disabled={disabled}
-                className="flex flex-col items-center text-center p-8 bg-brand-surface/70 text-text-primary rounded-2xl border border-transparent hover:border-brand-primary hover:bg-brand-surface transition-all duration-200 hover:-translate-y-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0">
-                <UploadIcon className="w-14 h-14 mb-4 text-brand-primary" />
-                <h3 className="text-xl font-semibold">Upload File</h3>
-                <p className="text-sm text-text-secondary mt-1">Audio or video. No size limit.</p>
-            </button>
-        </div>
-    </div>
-);
+    );
+};
 
 // ─── NoteCard ────────────────────────────────────────────────────────────────
 
@@ -333,44 +477,82 @@ const NoteCard: React.FC<{
 
     const Icon = note.recordingType === 'voice' ? MicIcon : note.recordingType === 'screen' ? ScreenRecordIcon : UploadIcon;
 
+    const statusColor = note.status === 'failed' ? '#ef4444' : note.status === 'processing' ? '#f59e0b' : '#00d46e';
+
     return (
         <div onClick={handleClick}
-            className={`bg-brand-surface p-4 rounded-xl flex items-center justify-between transition-all duration-200 animate-fade-in cursor-pointer
-                ${busy && !isSelectionMode ? 'opacity-60' : 'hover:bg-brand-surface/70'}
-                ${isSelected ? 'ring-2 ring-brand-primary ring-offset-2 ring-offset-brand-bg' : ''}`}>
-            <div className="flex items-center overflow-hidden min-w-0">
-                {isSelectionMode && (
-                    <div className="flex-shrink-0 pr-4">
-                        <input type="checkbox" checked={isSelected} readOnly
-                            className="w-5 h-5 bg-transparent border-2 border-brand-primary rounded cursor-pointer" />
-                    </div>
-                )}
-                <div className="bg-brand-bg p-3 rounded-lg mr-4 flex-shrink-0">
-                    <Icon className="w-6 h-6 text-brand-primary" />
-                </div>
-                <div className="truncate">
-                    <p className="font-semibold text-text-primary truncate">{displayTitle}</p>
-                    <p className="text-sm text-text-secondary">{new Date(note.timestamp).toLocaleString('en-IN')}</p>
-                </div>
+            className={`group flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 animate-fade-up
+                ${busy && !isSelectionMode ? 'opacity-50 pointer-events-none' : ''}
+                ${isSelected ? 'ring-1 ring-brand-primary' : ''}`}
+            style={{
+                ...GLASS_SUBTLE,
+                borderLeft: `2px solid ${statusColor}30`,
+                transition: 'all 0.2s cubic-bezier(0.22,0.61,0.36,1)',
+            }}
+            onMouseEnter={e => {
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = `${statusColor}80`;
+                (e.currentTarget as HTMLDivElement).style.background = 'rgba(8,22,14,0.7)';
+                (e.currentTarget as HTMLDivElement).style.transform = 'translateX(2px)';
+            }}
+            onMouseLeave={e => {
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = `${statusColor}30`;
+                (e.currentTarget as HTMLDivElement).style.background = 'rgba(5,14,9,0.5)';
+                (e.currentTarget as HTMLDivElement).style.transform = 'translateX(0)';
+            }}>
+
+            {isSelectionMode && (
+                <input type="checkbox" checked={isSelected} readOnly
+                    className="w-4 h-4 flex-shrink-0 cursor-pointer rounded" />
+            )}
+
+            {/* Icon */}
+            <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center"
+                style={{ background: 'rgba(0,212,110,0.06)', border: '1px solid rgba(0,212,110,0.1)' }}>
+                <Icon className="w-5 h-5 text-brand-primary/70" />
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0 pl-4">
+
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+                <p className="font-semibold text-text-primary truncate text-sm font-display leading-tight">{displayTitle}</p>
+                <p className="text-xs text-text-secondary font-mono mt-0.5">
+                    {new Date(note.timestamp).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                </p>
+            </div>
+
+            {/* Meta */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+                <span className="text-xs font-mono text-text-muted">{formatDuration(note.duration)}</span>
                 {busy
-                    ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-primary" />
-                    : note.status === 'failed'
-                        ? <div className="w-4 h-4 rounded-full bg-red-500" title="Failed" />
-                        : <div className="w-4 h-4 rounded-full bg-brand-primary" title="Ready" />
+                    ? <div className="w-4 h-4 rounded-full border border-brand-primary/30 border-t-brand-primary animate-spin" />
+                    : <div className="w-2 h-2 rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}60` }} />
                 }
-                <span className="text-sm font-mono text-text-secondary">{formatDuration(note.duration)}</span>
                 {!isSelectionMode && !busy && (
                     <button onClick={handleDelete} aria-label="Delete note"
-                        className="p-2 text-text-secondary hover:text-red-400 rounded-full transition-colors">
-                        <TrashIcon className="w-5 h-5" />
+                        className="p-1.5 text-text-muted hover:text-red-400 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-150"
+                        style={{ background: 'rgba(239,68,68,0.05)' }}>
+                        <TrashIcon className="w-4 h-4" />
                     </button>
                 )}
             </div>
         </div>
     );
 };
+
+// ─── Empty state ─────────────────────────────────────────────────────────────
+
+const EmptyState: React.FC<{ onNew: () => void; disabled: boolean }> = ({ onNew, disabled }) => (
+    <div className="text-center py-16 rounded-2xl animate-fade-up" style={GLASS_SUBTLE}>
+        <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float"
+            style={{ background: 'rgba(0,212,110,0.06)', border: '1px solid rgba(0,212,110,0.12)' }}>
+            <MicIcon className="w-9 h-9 text-brand-primary/50" />
+        </div>
+        <h3 className="text-lg font-bold text-text-primary font-display mb-2">No meetings captured yet</h3>
+        <p className="text-sm text-text-secondary mb-6 max-w-xs mx-auto">Record or upload your first meeting to get AI-generated minutes and action items.</p>
+        <Btn onClick={onNew} variant="primary" ariaLabel="New meeting" disabled={disabled}>
+            <PlusIcon className="w-4 h-4" /> New Meeting
+        </Btn>
+    </div>
+);
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -397,7 +579,7 @@ const App = () => {
     useEffect(() => { loadNotes(); }, [loadNotes]);
     useEffect(() => () => { notes.forEach(n => { if (n.mediaUrl) URL.revokeObjectURL(n.mediaUrl); }); }, [notes]);
 
-    const processNote = async (id: string, mediaBlob: Blob, extra: Partial<StoredNote>) => {
+    const processNote = async (id: string, mediaBlob: Blob, _extra: Partial<StoredNote>) => {
         try {
             const result = await generateNoteFromRecording(mediaBlob);
             await db.updateNote(id, { status: 'ready', title: result.title, transcription: result.transcription, summary: result.summary, actionItems: result.actionItems });
@@ -551,57 +733,70 @@ const App = () => {
             default: {
                 const empty = filteredNotes.length === 0;
                 return (
-                    <div className="w-full max-w-4xl mx-auto animate-fade-in">
-                        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
-                            <h2 className="text-3xl font-bold text-text-primary">My Notes</h2>
+                    <div className="w-full max-w-4xl mx-auto animate-fade-up">
+                        {/* Toolbar */}
+                        <div className="flex justify-between items-center mb-5 flex-wrap gap-3">
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-lg font-bold text-text-primary font-display tracking-tight">Notes</h2>
+                                {notes.length > 0 && (
+                                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '10px', letterSpacing: '0.08em', padding: '2px 7px', border: '1px solid rgba(0,212,110,0.2)', borderRadius: '2px', color: 'rgba(0,212,110,0.5)', background: 'rgba(0,212,110,0.04)' }}>
+                                        {notes.length}
+                                    </span>
+                                )}
+                            </div>
                             <div className="flex items-center gap-2">
+                                {/* Search */}
                                 <div className="relative">
-                                    <SearchIcon className="w-5 h-5 text-text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
-                                    <input type="text" placeholder="Search..." value={searchTerm}
+                                    <SearchIcon className="w-3.5 h-3.5 text-text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <input type="text" placeholder="Search notes..." value={searchTerm}
                                         onChange={e => setSearchTerm(e.target.value)}
                                         disabled={!!mutatingId || selectionMode}
-                                        className="bg-brand-surface border border-border-color rounded-full w-40 sm:w-56 py-2 pl-10 pr-4 text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-primary disabled:opacity-40" />
+                                        style={{ ...GLASS_SUBTLE, border: '1px solid rgba(0,212,110,0.12)' }}
+                                        className="rounded-xl w-40 sm:w-52 py-2 pl-9 pr-4 text-text-primary text-sm placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-brand-primary/40 disabled:opacity-40 font-sans" />
                                 </div>
+
+                                {/* Refresh */}
                                 <button onClick={async () => { if (mutatingId || isRefreshing) return; setIsRefreshing(true); await loadNotes(); setIsRefreshing(false); }}
                                     aria-label="Refresh" disabled={!!mutatingId || isRefreshing || selectionMode}
-                                    className={`p-3 text-text-primary rounded-full bg-brand-surface/80 hover:bg-brand-surface focus:outline-none focus:ring-4 focus:ring-brand-primary/40 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${isRefreshing ? 'animate-spin' : ''}`}>
-                                    <RefreshIcon className="w-5 h-5" />
+                                    style={GLASS_SUBTLE}
+                                    className={`p-2 text-text-secondary hover:text-brand-primary rounded-xl border border-brand-primary/10 transition-colors disabled:opacity-40 ${isRefreshing ? 'animate-spin' : ''}`}>
+                                    <RefreshIcon className="w-4 h-4" />
                                 </button>
+
                                 {!selectionMode ? (
                                     <>
-                                        {notes.length > 0 && <Btn onClick={() => setSelectionMode(true)} className="bg-brand-surface/80 hover:bg-brand-surface" ariaLabel="Select notes" disabled={!!mutatingId}>Select</Btn>}
-                                        <Btn onClick={handleDeleteAll} className="bg-red-800/70 hover:bg-red-700" ariaLabel="Delete all" disabled={!!mutatingId || !notes.length}>
-                                            <TrashIcon className="w-5 h-5" /><span className="ml-2 hidden sm:inline">Delete All</span>
-                                        </Btn>
-                                        <Btn onClick={() => setView('new')} className="bg-brand-primary hover:bg-brand-secondary text-brand-bg font-bold" ariaLabel="New meeting" disabled={!!mutatingId}>
-                                            <PlusIcon className="w-5 h-5" /><span className="ml-2 hidden sm:inline">New Meeting</span>
+                                        {notes.length > 0 && (
+                                            <Btn onClick={() => setSelectionMode(true)} ariaLabel="Select" disabled={!!mutatingId}>Select</Btn>
+                                        )}
+                                        {notes.length > 0 && (
+                                            <Btn onClick={handleDeleteAll} variant="danger" ariaLabel="Delete all" disabled={!!mutatingId}>
+                                                <TrashIcon className="w-3.5 h-3.5" /><span className="hidden sm:inline">All</span>
+                                            </Btn>
+                                        )}
+                                        <Btn onClick={() => setView('new')} variant="primary" ariaLabel="New meeting" disabled={!!mutatingId}>
+                                            <PlusIcon className="w-4 h-4" /><span className="hidden sm:inline">New Meeting</span>
                                         </Btn>
                                     </>
                                 ) : (
                                     <>
-                                        <Btn onClick={handleDeleteSelected} className="bg-red-600 hover:bg-red-700" ariaLabel="Delete selected" disabled={!selectedIds.size || !!mutatingId}>
-                                            <TrashIcon className="w-5 h-5" /><span className="ml-2">Delete ({selectedIds.size})</span>
+                                        <Btn onClick={handleDeleteSelected} variant="danger" ariaLabel="Delete selected" disabled={!selectedIds.size || !!mutatingId}>
+                                            <TrashIcon className="w-3.5 h-3.5" /> Delete ({selectedIds.size})
                                         </Btn>
-                                        <Btn onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} className="bg-brand-surface/80 hover:bg-brand-surface" ariaLabel="Cancel" disabled={!!mutatingId}>Cancel</Btn>
+                                        <Btn onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} ariaLabel="Cancel" disabled={!!mutatingId}>Cancel</Btn>
                                     </>
                                 )}
                             </div>
                         </div>
-                        <div className="space-y-3">
+
+                        {/* Note list */}
+                        <div className="space-y-2">
                             {empty && searchTerm && (
-                                <div className="text-center py-16 bg-brand-surface rounded-2xl">
-                                    <h3 className="text-xl font-semibold text-text-primary">No results</h3>
-                                    <p className="text-text-secondary">Nothing found for "{searchTerm}".</p>
+                                <div className="text-center py-12 rounded-xl animate-fade-up" style={GLASS_SUBTLE}>
+                                    <p className="text-text-secondary text-sm font-mono">// no results for "{searchTerm}"</p>
                                 </div>
                             )}
                             {empty && !searchTerm && (
-                                <div className="text-center py-16 bg-brand-surface rounded-2xl">
-                                    <h3 className="text-xl font-semibold text-text-primary mb-2">No notes yet</h3>
-                                    <p className="text-text-secondary mb-6">Record or upload your first meeting.</p>
-                                    <Btn onClick={() => setView('new')} className="bg-brand-primary hover:bg-brand-secondary text-brand-bg inline-flex" ariaLabel="New meeting" disabled={!!mutatingId}>
-                                        <PlusIcon className="w-5 h-5 mr-2" />New Meeting
-                                    </Btn>
-                                </div>
+                                <EmptyState onNew={() => setView('new')} disabled={!!mutatingId} />
                             )}
                             {!empty && filteredNotes.map(note => (
                                 <NoteCard key={note.id} note={note}
@@ -620,18 +815,65 @@ const App = () => {
     };
 
     return (
-        <main className="min-h-screen text-text-primary p-4 sm:p-8">
+        <div className="min-h-screen text-text-primary">
+            {/* Ambient glow orbs */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
+                <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full opacity-[0.04] blur-3xl"
+                    style={{ background: 'radial-gradient(circle, #00d46e, transparent)' }} />
+                <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full opacity-[0.03] blur-3xl"
+                    style={{ background: 'radial-gradient(circle, #00d46e, transparent)' }} />
+            </div>
+
             <Toaster position="top-right" theme="dark" richColors closeButton />
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="audio/*,video/*" className="hidden" />
-            <div className="text-center mb-10 sm:mb-14">
-                <h1 className="text-5xl md:text-7xl font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-brand-primary via-emerald-300 to-brand-primary animate-gradient-pan" style={{ backgroundSize: '200% 200%' }}>
-                    M.O.M IQ
-                </h1>
-                <p className="text-text-secondary mt-2 text-base tracking-widest uppercase text-sm">Minutes of Meeting Intelligence</p>
-                <p className="text-text-secondary/40 text-xs mt-1">by Pithonix AI</p>
-            </div>
-            {renderView()}
-        </main>
+
+            {/* Top accent line */}
+            <div className="h-px w-full fixed top-0 z-50"
+                style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,110,0.6) 30%, rgba(0,255,135,0.9) 50%, rgba(0,212,110,0.6) 70%, transparent)' }} />
+
+            <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+                {/* Header */}
+                <header className="text-center mb-12">
+                    {/* Wordmark */}
+                    <div className="inline-flex items-baseline gap-3 mb-3">
+                        <h1 className="font-display font-bold text-5xl sm:text-6xl tracking-tight shimmer-text"
+                            style={{
+                                background: 'linear-gradient(90deg, #00d46e 0%, #00ff87 30%, #7affcd 50%, #00ff87 70%, #00d46e 100%)',
+                                backgroundSize: '200% auto',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                backgroundClip: 'text',
+                                animation: 'shimmer 4s linear infinite',
+                                letterSpacing: '-0.04em',
+                            }}>
+                            M.O.M IQ
+                        </h1>
+                    </div>
+
+                    <p className="text-xs font-mono tracking-[0.3em] uppercase text-text-secondary/60 mb-1">
+                        Minutes of Meeting Intelligence
+                    </p>
+
+                    <div className="flex items-center justify-center gap-2 mt-3">
+                        <div className="h-px flex-1 max-w-16"
+                            style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,110,0.3))' }} />
+                        <span className="text-[10px] font-mono text-text-muted tracking-widest uppercase">by Pithonix AI</span>
+                        <div className="h-px flex-1 max-w-16"
+                            style={{ background: 'linear-gradient(90deg, rgba(0,212,110,0.3), transparent)' }} />
+                    </div>
+
+                    {/* Live indicator */}
+                    <div className="flex items-center justify-center gap-1.5 mt-4">
+                        <div className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-breathe"
+                            style={{ boxShadow: '0 0 6px rgba(0,212,110,0.8)' }} />
+                        <span className="text-[10px] font-mono text-brand-primary/50 tracking-widest">POWERED BY GEMINI 2.5 FLASH</span>
+                    </div>
+                </header>
+
+                {/* Main view */}
+                {renderView()}
+            </main>
+        </div>
     );
 };
 
