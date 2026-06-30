@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full bleed background for maskable — fills every pixel -->
+  <rect x="0" y="0" width="512" height="512" fill="#050e09"/>
+
+  <!-- Ambient glow -->
+  <radialGradient id="mglow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#00d46e" stop-opacity="0.2"/>
+    <stop offset="100%" stop-color="#00d46e" stop-opacity="0"/>
+  </radialGradient>
+  <ellipse cx="256" cy="280" rx="220" ry="160" fill="url(#mglow)"/>
+
+  <defs>
+    <linearGradient id="mfaceTop2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ff90"/>
+      <stop offset="40%" stop-color="#00d46e"/>
+      <stop offset="100%" stop-color="#007a3f"/>
+    </linearGradient>
+    <linearGradient id="mfaceRight2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#005a2e"/>
+      <stop offset="100%" stop-color="#002e17"/>
+    </linearGradient>
+    <linearGradient id="mmTop2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#b0ffd8"/>
+      <stop offset="100%" stop-color="#00d46e"/>
+    </linearGradient>
+    <filter id="mglow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+      <feFlood flood-color="#00ff88" flood-opacity="0.6" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Platform — scaled to sit within maskable safe zone (80% = 102px inset each side) -->
+  <!-- Safe zone: content between x=102,y=102 and x=410,y=410 -->
+
+  <!-- Platform bottom face -->
+  <polygon points="112,305  256,385  400,305  400,338  256,418  112,338" fill="#003018" opacity="0.9"/>
+  <!-- Platform right face -->
+  <polygon points="256,230  400,150  400,305  256,385" fill="url(#mfaceRight2)" opacity="0.95"/>
+  <!-- Platform left face -->
+  <polygon points="112,150  256,230  256,385  112,305" fill="#004528" opacity="0.85"/>
+  <!-- Platform top face -->
+  <polygon points="112,150  256,68  400,150  256,230" fill="url(#mfaceTop2)"/>
+  <!-- Specular -->
+  <polygon points="112,150  256,68  400,150  256,230" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+
+  <!-- M letter (scaled) -->
+  <g filter="url(#mglow2)">
+    <path d="
+      M148,168 L148,218 L167,218 L167,190 L193,208 L206,208 L233,190
+      L233,218 L260,218 L260,190 L286,208 L299,208 L325,190 L325,218
+      L345,218 L345,168 L325,168 L299,188 L274,168 L231,168 L205,188
+      L178,168 Z
+    " fill="url(#mmTop2)"/>
+  </g>
+
+  <!-- IQ -->
+  <g opacity="0.8">
+    <rect x="220" y="242" width="11" height="34" rx="3" fill="#00d46e"/>
+    <circle cx="264" cy="259" r="16" fill="none" stroke="#00d46e" stroke-width="9"/>
+    <line x1="274" y1="269" x2="285" y2="280" stroke="#00d46e" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <!-- Pithonix label -->
+  <text x="256" y="402" text-anchor="middle" font-family="'Inter',sans-serif"
+    font-size="14" font-weight="500" letter-spacing="2" fill="rgba(0,212,110,0.6)">PITHONIX AI</text>
+</svg>
