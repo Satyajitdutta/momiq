@@ -25,3 +25,5 @@ server/node_modules
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
