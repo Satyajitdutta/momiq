@@ -1,4 +1,4 @@
-const CACHE = 'momiq-v1';
+const CACHE = 'momiq-v2';
 const STATIC = [
   '/',
   '/manifest.json',
@@ -8,41 +8,54 @@ const STATIC = [
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(STATIC)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then(c => c.addAll(STATIC))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', e => {
+  // Delete ALL old caches immediately, then take control
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => {
+        // Tell all open tabs to reload so they get the fresh build
+        self.clients.matchAll({ type: 'window' }).then(clients => {
+          clients.forEach(c => c.navigate(c.url));
+        });
+      })
   );
 });
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Always network-first for API calls — never serve stale AI responses
+  // API calls always go to the network — never cache AI responses
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(fetch(e.request));
     return;
   }
 
-  // Cache-first for static assets (fonts, icons, JS bundles)
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
-        if (res.ok && e.request.method === 'GET') {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
+  // JS/CSS asset bundles: cache-first (Vite content-hashes them)
+  if (url.pathname.match(/\.(js|css|woff2?|ttf)$/)) {
+    e.respondWith(
+      caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
         return res;
-      }).catch(() => {
-        // Offline fallback: serve app shell for navigation requests
-        if (e.request.mode === 'navigate') return caches.match('/');
-      });
-    })
+      }))
+    );
+    return;
+  }
+
+  // HTML navigation: network-first so deploys are picked up immediately
+  e.respondWith(
+    fetch(e.request)
+      .then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(e.request).then(c => c || caches.match('/')))
   );
 });
