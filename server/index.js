@@ -97,7 +97,12 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
                 model: 'gemini-2.5-flash',
                 contents: {
                     parts: [
-                        { text: "Transcribe this audio, identifying different speakers as 'Speaker 1', 'Speaker 2', etc. If the audio is silent or contains no discernible speech, return the string '[SILENCE]'." },
+                        { text: "Transcribe this audio, identifying different speakers as 'Speaker 1', 'Speaker 2', etc. " +
+                                "The speakers are Indian professionals and may mix Hindi/Hinglish with English; render the transcript in clear English. " +
+                                "Words that were mumbled, clipped, or misheard must be corrected to the words that clearly fit the conversation context, never left as nonsense. " +
+                                "Spell these names exactly when they occur: Pithonix AI, JEET, HARI, INDUS, GCC, BOT, Satyajit v Dutta, M.O.M IQ, WealthIQ, Vaani, Ansh, Sarvam. " +
+                                "Never use em dashes: use commas, colons or full stops. " +
+                                "If the audio is silent or contains no discernible speech, return the string '[SILENCE]'." },
                         mediaPart,
                     ],
                 },
