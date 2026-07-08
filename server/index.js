@@ -85,8 +85,10 @@ const CHUNK_SECONDS = 20 * 60;
 const TRANSCRIBE_PROMPT =
     "Transcribe this audio, identifying different speakers as 'Speaker 1', 'Speaker 2', etc. " +
     "The speakers are Indian professionals and may mix Hindi/Hinglish with English; render the transcript in clear English. " +
-    "Words that were mumbled, clipped, or misheard must be corrected to the words that clearly fit the conversation context, never left as nonsense. " +
-    "Spell these names exactly when they occur: Pithonix AI, JEET, HARI, INDUS, GCC, BOT, Satyajit v Dutta, M.O.M IQ, WealthIQ, Vaani, Ansh, Sarvam. " +
+    "Transcribe ONLY speech that is actually present in the audio. Never invent, reconstruct, or imagine dialogue. " +
+    "If a word or passage is unintelligible, write [inaudible] rather than guessing whole phrases. " +
+    "A single mumbled word may be corrected only when the surrounding sentence makes the intended word unambiguous. " +
+    "If any of these names are genuinely spoken, spell them exactly (do NOT introduce them otherwise): Pithonix AI, JEET, HARI, INDUS, GCC, BOT, Satyajit v Dutta, M.O.M IQ, WealthIQ, Vaani, Ansh, Sarvam. " +
     "Never use em dashes: use commas, colons or full stops. " +
     "If the audio is silent or contains no discernible speech, return the string '[SILENCE]'.";
 
