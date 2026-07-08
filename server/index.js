@@ -7,6 +7,13 @@ import { getWhatsAppProvider } from './whatsapp/provider.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
+import { readFile, readdir, mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import ffmpegPath from 'ffmpeg-static';
+
+const execFileP = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = join(__dirname, '..', 'dist');
@@ -36,9 +43,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY.trim() });
     }
 })();
 
-// 500MB in-memory — no serverless ceiling
+// 500MB to disk — a 3-hour video must never sit in RAM
 const upload = multer({
-    storage: multer.memoryStorage(),
+    dest: tmpdir(),
     limits: { fileSize: 500 * 1024 * 1024 },
 });
 
@@ -68,7 +75,48 @@ const withRetry = async (fn, retries = 3, delay = 2000) => {
     }
 };
 
-const INLINE_LIMIT = 20 * 1024 * 1024;
+// Chunked transcription: any upload (audio or video) is first normalized to
+// compact mono MP3, then split into 20-minute segments. Each segment fits
+// inline (~7MB) and well under free-tier per-minute token caps, so meetings
+// of any length work without the Files API.
+const CHUNK_SECONDS = 20 * 60;
+
+const TRANSCRIBE_PROMPT =
+    "Transcribe this audio, identifying different speakers as 'Speaker 1', 'Speaker 2', etc. " +
+    "The speakers are Indian professionals and may mix Hindi/Hinglish with English; render the transcript in clear English. " +
+    "Words that were mumbled, clipped, or misheard must be corrected to the words that clearly fit the conversation context, never left as nonsense. " +
+    "Spell these names exactly when they occur: Pithonix AI, JEET, HARI, INDUS, GCC, BOT, Satyajit v Dutta, M.O.M IQ, WealthIQ, Vaani, Ansh, Sarvam. " +
+    "Never use em dashes: use commas, colons or full stops. " +
+    "If the audio is silent or contains no discernible speech, return the string '[SILENCE]'.";
+
+async function extractAudioChunks(inputPath, workDir) {
+    // -vn drops any video track; 16kHz mono 48kbps MP3 is plenty for speech
+    await execFileP(ffmpegPath, [
+        '-y', '-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k',
+        '-f', 'segment', '-segment_time', String(CHUNK_SECONDS), '-reset_timestamps', '1',
+        join(workDir, 'chunk-%03d.mp3'),
+    ], { maxBuffer: 10 * 1024 * 1024 });
+    const files = (await readdir(workDir)).filter(f => f.startsWith('chunk-')).sort();
+    if (files.length === 0) throw new Error('Could not extract audio from the uploaded file.');
+    return files.map(f => join(workDir, f));
+}
+
+async function transcribeChunk(chunkPath, chunkIndex, totalChunks, previousTail) {
+    const data = (await readFile(chunkPath)).toString('base64');
+    let prompt = TRANSCRIBE_PROMPT;
+    if (chunkIndex > 0) {
+        prompt += `\n\nThis audio is part ${chunkIndex + 1} of ${totalChunks} of the SAME continuous meeting. ` +
+            `Keep speaker labels consistent with the earlier parts. The transcript so far ended with:\n"...${previousTail}"`;
+    }
+    const resp = await withRetry(() =>
+        ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }, { inlineData: { mimeType: 'audio/mp3', data } }] },
+        })
+    );
+    const text = resp.text?.trim() || '';
+    return text.toUpperCase() === '[SILENCE]' ? '' : text;
+}
 
 const getApiErrorMessage = (e) => {
     try { return JSON.parse(e.message)?.error?.message || e.message; }
@@ -90,53 +138,28 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'M.O.M IQ' }
  * Returns: { transcription, title, summary, actionItems }
  */
 app.post('/api/process-note', upload.single('media'), async (req, res) => {
+    let workDir;
     try {
         if (!req.file) return res.status(400).json({ error: 'No media file provided.' });
 
-        const { buffer, mimetype } = req.file;
-        let mediaPart;
+        console.log(`Upload: ${(req.file.size / 1024 / 1024).toFixed(1)}MB ${req.file.mimetype}`);
+        workDir = await mkdtemp(join(tmpdir(), 'momiq-'));
 
-        if (buffer.length >= INLINE_LIMIT) {
-            // Large file: upload to Gemini Files API
-            console.log(`File ${(buffer.length / 1024 / 1024).toFixed(1)}MB — using Files API`);
-            const blob = new Blob([buffer], { type: mimetype });
-            let uploaded = await ai.files.upload({ file: blob, config: { mimeType: mimetype } });
-            // Files API processes asynchronously — using the URI before the file
-            // is ACTIVE fails, especially on long recordings. Poll up to 2 min.
-            const deadline = Date.now() + 120000;
-            while (uploaded.state === 'PROCESSING' && Date.now() < deadline) {
-                await new Promise(r => setTimeout(r, 3000));
-                uploaded = await ai.files.get({ name: uploaded.name });
-            }
-            if (uploaded.state !== 'ACTIVE') {
-                throw new Error(`Uploaded file did not become ready (state: ${uploaded.state}). Please try again.`);
-            }
-            mediaPart = { fileData: { mimeType: mimetype, fileUri: uploaded.uri } };
-        } else {
-            mediaPart = { inlineData: { mimeType: mimetype, data: buffer.toString('base64') } };
+        // Step 1: normalize to compact audio and split into 20-min chunks
+        const chunks = await extractAudioChunks(req.file.path, workDir);
+        console.log(`Transcribing ${chunks.length} chunk(s)`);
+
+        // Step 2: transcribe sequentially, carrying context between chunks
+        const parts = [];
+        for (let i = 0; i < chunks.length; i++) {
+            const previousTail = parts.length ? parts[parts.length - 1].slice(-500) : '';
+            const text = await transcribeChunk(chunks[i], i, chunks.length, previousTail);
+            if (text) parts.push(text);
+            console.log(`Chunk ${i + 1}/${chunks.length} done`);
         }
+        const rawTranscription = parts.join('\n\n');
 
-        // Step 1: Transcribe
-        const transcribeResp = await withRetry(() =>
-            ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: {
-                    parts: [
-                        { text: "Transcribe this audio, identifying different speakers as 'Speaker 1', 'Speaker 2', etc. " +
-                                "The speakers are Indian professionals and may mix Hindi/Hinglish with English; render the transcript in clear English. " +
-                                "Words that were mumbled, clipped, or misheard must be corrected to the words that clearly fit the conversation context, never left as nonsense. " +
-                                "Spell these names exactly when they occur: Pithonix AI, JEET, HARI, INDUS, GCC, BOT, Satyajit v Dutta, M.O.M IQ, WealthIQ, Vaani, Ansh, Sarvam. " +
-                                "Never use em dashes: use commas, colons or full stops. " +
-                                "If the audio is silent or contains no discernible speech, return the string '[SILENCE]'." },
-                        mediaPart,
-                    ],
-                },
-            })
-        );
-
-        const rawTranscription = transcribeResp.text?.trim() || '';
-
-        if (!rawTranscription || rawTranscription.toUpperCase() === '[SILENCE]') {
+        if (!rawTranscription) {
             return res.json({
                 transcription: 'This recording appears to be silent or contains no speech.',
                 summary: 'No content to summarize — the recording was silent.',
@@ -145,7 +168,7 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
             });
         }
 
-        // Step 2: Summarize with structured output
+        // Step 3: Summarize with structured output
         const summarySchema = {
             type: Type.OBJECT,
             properties: {
@@ -175,7 +198,7 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
 
         const result = { transcription: rawTranscription, title, summary, actionItems };
 
-        // Step 3 (optional): WhatsApp delivery
+        // Step 4 (optional): WhatsApp delivery
         // Falls back to WHATSAPP_DEFAULT_TO if the client doesn't specify a number
         const toNumber = req.body?.toNumber || process.env.WHATSAPP_DEFAULT_TO;
         if (toNumber) {
@@ -199,6 +222,9 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
     } catch (e) {
         console.error('Error processing note:', e);
         return res.status(500).json({ error: getApiErrorMessage(e) });
+    } finally {
+        if (req.file?.path) rm(req.file.path, { force: true }).catch(() => {});
+        if (workDir) rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
 });
 
