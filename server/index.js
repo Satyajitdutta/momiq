@@ -19,7 +19,22 @@ if (!process.env.GEMINI_API_KEY) {
     process.exit(1);
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY.trim() });
+
+// Pre-flight: fail loudly in the deploy logs if the key is dead,
+// instead of failing silently at demo time.
+(async () => {
+    try {
+        await ai.models.list();
+        console.log('GEMINI_API_KEY verified OK');
+    } catch (e) {
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        console.error('FATAL: GEMINI_API_KEY is INVALID — all processing will fail.');
+        console.error('Rotate the key in AI Studio and update the Railway variable.');
+        console.error('Details:', getApiErrorMessage(e));
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    }
+})();
 
 // 500MB in-memory — no serverless ceiling
 const upload = multer({
@@ -85,7 +100,17 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
             // Large file: upload to Gemini Files API
             console.log(`File ${(buffer.length / 1024 / 1024).toFixed(1)}MB — using Files API`);
             const blob = new Blob([buffer], { type: mimetype });
-            const uploaded = await ai.files.upload({ file: blob, config: { mimeType: mimetype } });
+            let uploaded = await ai.files.upload({ file: blob, config: { mimeType: mimetype } });
+            // Files API processes asynchronously — using the URI before the file
+            // is ACTIVE fails, especially on long recordings. Poll up to 2 min.
+            const deadline = Date.now() + 120000;
+            while (uploaded.state === 'PROCESSING' && Date.now() < deadline) {
+                await new Promise(r => setTimeout(r, 3000));
+                uploaded = await ai.files.get({ name: uploaded.name });
+            }
+            if (uploaded.state !== 'ACTIVE') {
+                throw new Error(`Uploaded file did not become ready (state: ${uploaded.state}). Please try again.`);
+            }
             mediaPart = { fileData: { mimeType: mimetype, fileUri: uploaded.uri } };
         } else {
             mediaPart = { inlineData: { mimeType: mimetype, data: buffer.toString('base64') } };
