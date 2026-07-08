@@ -10,6 +10,7 @@ import { existsSync } from 'fs';
 import { readFile, readdir, mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { execFile } from 'child_process';
+import { randomUUID } from 'crypto';
 import { promisify } from 'util';
 import ffmpegPath from 'ffmpeg-static';
 
@@ -137,21 +138,24 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'M.O.M IQ' }
  *
  * Returns: { transcription, title, summary, actionItems }
  */
-app.post('/api/process-note', upload.single('media'), async (req, res) => {
+// Full pipeline: media file → transcript → summary → optional WhatsApp.
+// Shared by the synchronous route and the background-job route.
+// onProgress(label) is called as chunks complete so polling clients can show status.
+async function processNotePipeline(file, body, onProgress = () => {}) {
     let workDir;
     try {
-        if (!req.file) return res.status(400).json({ error: 'No media file provided.' });
-
-        console.log(`Upload: ${(req.file.size / 1024 / 1024).toFixed(1)}MB ${req.file.mimetype}`);
+        console.log(`Upload: ${(file.size / 1024 / 1024).toFixed(1)}MB ${file.mimetype}`);
+        onProgress('Preparing audio');
         workDir = await mkdtemp(join(tmpdir(), 'momiq-'));
 
         // Step 1: normalize to compact audio and split into 20-min chunks
-        const chunks = await extractAudioChunks(req.file.path, workDir);
+        const chunks = await extractAudioChunks(file.path, workDir);
         console.log(`Transcribing ${chunks.length} chunk(s)`);
 
         // Step 2: transcribe sequentially, carrying context between chunks
         const parts = [];
         for (let i = 0; i < chunks.length; i++) {
+            onProgress(chunks.length > 1 ? `Transcribing part ${i + 1} of ${chunks.length}` : 'Transcribing');
             const previousTail = parts.length ? parts[parts.length - 1].slice(-500) : '';
             const text = await transcribeChunk(chunks[i], i, chunks.length, previousTail);
             if (text) parts.push(text);
@@ -160,12 +164,12 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
         const rawTranscription = parts.join('\n\n');
 
         if (!rawTranscription) {
-            return res.json({
+            return {
                 transcription: 'This recording appears to be silent or contains no speech.',
                 summary: 'No content to summarize — the recording was silent.',
                 actionItems: [],
                 title: 'Silent Recording',
-            });
+            };
         }
 
         // Step 3: Summarize with structured output
@@ -180,6 +184,7 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
             required: ['title', 'summary', 'actionItems'],
         };
 
+        onProgress('Summarizing');
         const summarizeResp = await withRetry(() =>
             ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -200,15 +205,15 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
 
         // Step 4 (optional): WhatsApp delivery
         // Falls back to WHATSAPP_DEFAULT_TO if the client doesn't specify a number
-        const toNumber = req.body?.toNumber || process.env.WHATSAPP_DEFAULT_TO;
+        const toNumber = body?.toNumber || process.env.WHATSAPP_DEFAULT_TO;
         if (toNumber) {
             try {
                 const wa = getWhatsAppProvider();
                 await wa.sendNote(toNumber, {
                     ...result,
                     timestamp: new Date().toISOString(),
-                    sessionLabel: req.body?.sessionLabel,
-                    deepLink: req.body?.deepLink,
+                    sessionLabel: body?.sessionLabel,
+                    deepLink: body?.deepLink,
                 });
                 console.log(`WhatsApp note delivered to ${toNumber}`);
             } catch (waErr) {
@@ -217,15 +222,61 @@ app.post('/api/process-note', upload.single('media'), async (req, res) => {
             }
         }
 
-        return res.json(result);
+        return result;
 
+    } finally {
+        if (file?.path) rm(file.path, { force: true }).catch(() => {});
+        if (workDir) rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
+}
+
+// Synchronous route — kept for older cached PWA clients
+app.post('/api/process-note', upload.single('media'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No media file provided.' });
+        return res.json(await processNotePipeline(req.file, req.body));
     } catch (e) {
         console.error('Error processing note:', e);
         return res.status(500).json({ error: getApiErrorMessage(e) });
-    } finally {
-        if (req.file?.path) rm(req.file.path, { force: true }).catch(() => {});
-        if (workDir) rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
+});
+
+// ─── Background jobs ─────────────────────────────────────────────────────────
+// Long meetings take minutes to process; holding one HTTP request open that
+// long risks proxy timeouts and dies if the phone locks. The client instead
+// gets a jobId back immediately and polls /api/jobs/:id.
+
+const jobs = new Map();
+const JOB_TTL_MS = 2 * 60 * 60 * 1000;
+
+setInterval(() => {
+    const cutoff = Date.now() - JOB_TTL_MS;
+    for (const [id, job] of jobs) if (job.createdAt < cutoff) jobs.delete(id);
+}, 10 * 60 * 1000).unref();
+
+app.post('/api/process-note-async', upload.single('media'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No media file provided.' });
+
+    const jobId = randomUUID();
+    const job = { status: 'processing', progress: 'Queued', createdAt: Date.now() };
+    jobs.set(jobId, job);
+
+    processNotePipeline(req.file, req.body, (label) => { job.progress = label; })
+        .then((result) => { job.status = 'done'; job.result = result; })
+        .catch((e) => {
+            console.error(`Job ${jobId} failed:`, e);
+            job.status = 'error';
+            job.error = getApiErrorMessage(e);
+        });
+
+    return res.status(202).json({ jobId });
+});
+
+app.get('/api/jobs/:id', (req, res) => {
+    const job = jobs.get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found or expired.' });
+    const { status, progress, result, error } = job;
+    return res.json({ status, progress, result, error });
 });
 
 /**

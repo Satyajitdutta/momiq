@@ -563,7 +563,9 @@ const App = () => {
 
     const processNote = async (id: string, mediaBlob: Blob, _extra: Partial<StoredNote>) => {
         try {
-            const result = await generateNoteFromRecording(mediaBlob);
+            const result = await generateNoteFromRecording(mediaBlob, (label) => {
+                db.updateNote(id, { summary: `${label}...` }).then(loadNotes).catch(() => {});
+            });
             await db.updateNote(id, { status: 'ready', title: result.title, transcription: result.transcription, summary: result.summary, actionItems: result.actionItems });
             toast.success(result.title || 'Note ready.');
         } catch (e: any) {

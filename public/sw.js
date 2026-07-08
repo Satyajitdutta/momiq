@@ -1,4 +1,4 @@
-const CACHE = 'momiq-v2';
+const CACHE = 'momiq-v3';
 const STATIC = [
   '/',
   '/manifest.json',
