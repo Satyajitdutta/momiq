@@ -23,6 +23,9 @@ const Recorder: React.FC<RecorderProps> = ({ mode, onChunkComplete, onFinalStop,
   const timerIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isFinalChunkRef = useRef(false);
+  // Refs mirror state so onstop closure always reads the current value
+  const currentChunkTimeRef = useRef(0);
+  const partNumberRef = useRef(1);
 
   const stopTimer = useCallback(() => {
     if (timerIntervalRef.current) {
@@ -34,7 +37,7 @@ const Recorder: React.FC<RecorderProps> = ({ mode, onChunkComplete, onFinalStop,
   const startTimer = useCallback(() => {
     stopTimer();
     timerIntervalRef.current = window.setInterval(() => {
-      setCurrentChunkTime(p => p + 1);
+      setCurrentChunkTime(p => { const next = p + 1; currentChunkTimeRef.current = next; return next; });
       setTotalTime(p => p + 1);
     }, 1000);
   }, [stopTimer]);
@@ -74,6 +77,8 @@ const Recorder: React.FC<RecorderProps> = ({ mode, onChunkComplete, onFinalStop,
 
   const handleStartRecording = async (restarting = false) => {
     if (!restarting) {
+      partNumberRef.current = 1;
+      currentChunkTimeRef.current = 0;
       setPartNumber(1);
       setTotalTime(0);
       setCurrentChunkTime(0);
@@ -95,6 +100,13 @@ const Recorder: React.FC<RecorderProps> = ({ mode, onChunkComplete, onFinalStop,
         streamRef.current = stream;
       } else {
         stream = streamRef.current;
+        // If the user dismissed the screen share (or any track ended), treat as a final stop
+        if (stream.getTracks().some(t => t.readyState === 'ended')) {
+          cleanup();
+          setStatus('inactive');
+          onFinalStop();
+          return;
+        }
       }
 
       setStatus('recording');
@@ -126,8 +138,10 @@ const Recorder: React.FC<RecorderProps> = ({ mode, onChunkComplete, onFinalStop,
         stopTimer();
         const finalMime = mediaRecorderRef.current?.mimeType || (mode === 'screen' ? 'video/webm' : 'audio/webm');
         const blob = new Blob(chunksRef.current, { type: finalMime });
-        if (blob.size > 0) onChunkComplete(blob, currentChunkTime, partNumber);
+        // Use refs — state values are stale inside this closure
+        if (blob.size > 0) onChunkComplete(blob, currentChunkTimeRef.current, partNumberRef.current);
         chunksRef.current = [];
+        currentChunkTimeRef.current = 0;
         setCurrentChunkTime(0);
 
         if (isFinalChunkRef.current) {
@@ -135,12 +149,20 @@ const Recorder: React.FC<RecorderProps> = ({ mode, onChunkComplete, onFinalStop,
           setStatus('inactive');
           onFinalStop();
         } else {
-          setPartNumber(p => p + 1);
+          setPartNumber(p => { partNumberRef.current = p + 1; return p + 1; });
           handleStartRecording(true);
         }
       };
 
-      mediaRecorderRef.current.start();
+      try {
+        mediaRecorderRef.current.start();
+      } catch (err: any) {
+        onError(`Recording could not start: ${err.message}`);
+        cleanup();
+        onFinalStop();
+        return;
+      }
+      currentChunkTimeRef.current = 0;
       setCurrentChunkTime(0);
       startTimer();
     } catch (err: any) {
