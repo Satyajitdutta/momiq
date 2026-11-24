@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Toaster, toast } from 'sonner';
 import { jsPDF } from 'jspdf';
-import { generateNoteFromRecording, regenerateNotes, createShareLink, pushToAnsh, getWordList, setWordList } from './services/gemini';
+import { generateNoteFromRecording, regenerateNotes, createShareLink, pushToAnsh, pushToJeet, getWordList, setWordList } from './services/gemini';
 import { applySpeakerNames, listSpeakers, toDocx, toMarkdown, toSrt, downloadBlob, fileSlug, TS_RE, tsToSeconds } from './services/exporters';
 import LiveMeeting from './components/LiveMeeting';
 import * as db from './services/db';
@@ -260,7 +260,7 @@ const ResultView: React.FC<{
 }> = ({ note, onBack, onDelete, onRetry, onUpdateCompletedItems, onUpdateNote, isMutating }) => {
     const [completedItems, setCompletedItems] = useState<number[]>(note.completedItems || []);
     const [names, setNames] = useState<Record<string, string>>(note.speakerNames || {});
-    const [busy, setBusy] = useState<'' | 'regen' | 'ansh' | 'share' | 'docx'>('');
+    const [busy, setBusy] = useState<'' | 'regen' | 'ansh' | 'jeet' | 'share' | 'docx'>('');
     const [shareOpen, setShareOpen] = useState(false);
     const [sharePw, setSharePw] = useState('');
     const [shareHours, setShareHours] = useState(72);
@@ -308,6 +308,17 @@ const ResultView: React.FC<{
         try {
             await pushToAnsh({ ...named, transcription: applySpeakerNames(note.transcription || '', names) });
             toast.success('Sent to Ansh. You can now ask Ansh about this meeting.');
+        } catch (e: any) { toast.error(e.message); }
+        finally { setBusy(''); }
+    };
+
+    const sendToJeet = async () => {
+        if (!note.conclusions?.length && !note.actionItems?.length) { toast.message('This meeting has no decisions or action items to send.'); return; }
+        setBusy('jeet');
+        try {
+            const r = await pushToJeet({ ...named, conclusions: note.conclusions?.map(c => ({ ...c, text: applySpeakerNames(c.text, names) })),
+                actionItems: note.actionItems?.map(a => applySpeakerNames(a, names)), shareUrl: shareResult?.url });
+            toast.success(`Sent ${r.recorded} entries to the JEET ERP audit ledger.`);
         } catch (e: any) { toast.error(e.message); }
         finally { setBusy(''); }
     };
@@ -422,6 +433,9 @@ const ResultView: React.FC<{
                     </Btn>
                     <Btn onClick={sendToAnsh} ariaLabel="Send to Ansh" disabled={busy === 'ansh'}>
                         <span>{busy === 'ansh' ? 'Sending...' : 'To Ansh'}</span>
+                    </Btn>
+                    <Btn onClick={sendToJeet} ariaLabel="Send decisions to JEET ERP" disabled={busy === 'jeet'}>
+                        <span>{busy === 'jeet' ? 'Sending...' : 'To JEET'}</span>
                     </Btn>
                     <Btn onClick={handleDownloadAndDelete} variant="danger" ariaLabel="Delete" disabled={isMutating}>
                         <TrashIcon className="w-4 h-4" /><span className="hidden sm:inline">{isMutating ? '...' : 'Delete'}</span>

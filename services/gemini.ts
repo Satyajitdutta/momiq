@@ -30,6 +30,8 @@ export const createShareLink = (note: object, opts: { password?: string; expires
 
 export const pushToAnsh = (note: object) => postJson<{ ok: boolean }>('/push-to-ansh', note);
 
+export const pushToJeet = (note: object) => postJson<{ ok: boolean; recorded: number }>('/push-to-jeet', note);
+
 export const transcribeLiveClip = async (
     clip: Blob, offsetSeconds: number, source: 'room' | 'online' | '', previousTail: string,
 ): Promise<string> => {

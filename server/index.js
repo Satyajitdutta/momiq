@@ -579,6 +579,26 @@ app.post('/api/push-to-ansh', async (req, res) => {
     }
 });
 
+// ─── Send decisions to JEET ERP's audit ledger ──────────────────────────────
+app.post('/api/push-to-jeet', async (req, res) => {
+    try {
+        const url = process.env.JEET_URL, token = process.env.JEET_INGEST_TOKEN;
+        if (!url || !token) return res.status(503).json({ error: 'JEET ERP is not connected yet (JEET_URL and JEET_INGEST_TOKEN are not set).' });
+        const { title, timestamp, conclusions, actionItems, actionItemTimes, shareUrl } = req.body || {};
+        const r = await fetch(url.replace(/\/$/, '') + '/api/meetings/decisions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-ingest-token': token },
+            body: JSON.stringify({ source: 'momiq', title, timestamp, conclusions, actionItems, actionItemTimes, shareUrl }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) return res.status(r.status).json({ error: data.error || `JEET returned ${r.status}` });
+        return res.json({ ok: true, recorded: data.recorded });
+    } catch (e) {
+        console.error('push-to-jeet failed:', e);
+        return res.status(500).json({ error: getApiErrorMessage(e) });
+    }
+});
+
 // Serve built frontend — Railway hosts everything, no Vercel needed
 if (existsSync(DIST_DIR)) {
     app.use(express.static(DIST_DIR));
