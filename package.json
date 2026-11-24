@@ -9,9 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "docx": "^9.16.0",
+    "jspdf": "^2.5.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "jspdf": "^2.5.2",
     "sonner": "^2.0.3"
   },
   "devDependencies": {

@@ -1,6 +1,49 @@
 // In production: same-origin /api (Express serves both frontend + API on Railway)
 // In local dev: proxied to localhost:3001 via vite.config.ts
+import type { MeetingNotes } from '../types';
+
 const API_BASE = '/api';
+
+// The user's own word list (names, clients, product terms), kept on this device.
+const TERMS_KEY = 'momiq.terms';
+export const getWordList = (): string => {
+    try { return localStorage.getItem(TERMS_KEY) || ''; } catch { return ''; }
+};
+export const setWordList = (v: string) => {
+    try { localStorage.setItem(TERMS_KEY, v); } catch { /* storage blocked: list just won't persist */ }
+};
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+    const r = await fetch(`${API_BASE}${path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((data as any).error || `Server returned ${r.status}`);
+    return data as T;
+}
+
+export const regenerateNotes = (transcript: string, rolling = false) =>
+    postJson<MeetingNotes>('/notes', { transcript, rolling });
+
+export const createShareLink = (note: object, opts: { password?: string; expiresInHours: number; includeTranscript: boolean }) =>
+    postJson<{ url: string; expiresAt: number; redacted: Record<string, number>; persistent: boolean }>('/share', { note, ...opts });
+
+export const pushToAnsh = (note: object) => postJson<{ ok: boolean }>('/push-to-ansh', note);
+
+export const transcribeLiveClip = async (
+    clip: Blob, offsetSeconds: number, source: 'room' | 'online' | '', previousTail: string,
+): Promise<string> => {
+    const fd = new FormData();
+    fd.append('media', clip, `clip.${clip.type.split('/')[1]?.split(';')[0] || 'webm'}`);
+    fd.append('offsetSeconds', String(Math.round(offsetSeconds)));
+    fd.append('source', source);
+    fd.append('previousTail', previousTail);
+    fd.append('terms', getWordList());
+    const r = await fetch(`${API_BASE}/live/chunk`, { method: 'POST', body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Server returned ${r.status}`);
+    return data.lines || '';
+};
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 30 * 60 * 1000; // long meetings can take many minutes
@@ -8,9 +51,10 @@ const POLL_TIMEOUT_MS = 30 * 60 * 1000; // long meetings can take many minutes
 export const generateNoteFromRecording = async (
     mediaBlob: Blob,
     onProgress?: (label: string) => void
-): Promise<{ transcription: string; summary: string; actionItems: string[]; title: string }> => {
+): Promise<MeetingNotes & { transcription: string }> => {
     const formData = new FormData();
     formData.append('media', mediaBlob, `recording.${mediaBlob.type.split('/')[1] || 'webm'}`);
+    formData.append('terms', getWordList());
 
     // Kick off a background job: the server responds immediately with a jobId,
     // so no HTTP request stays open for minutes (proxy timeouts, phone lock).

@@ -1,15 +1,19 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Toaster, toast } from 'sonner';
 import { jsPDF } from 'jspdf';
-import { generateNoteFromRecording } from './services/gemini';
+import { generateNoteFromRecording, regenerateNotes, createShareLink, pushToAnsh, getWordList, setWordList } from './services/gemini';
+import { applySpeakerNames, listSpeakers, toDocx, toMarkdown, toSrt, downloadBlob, fileSlug, TS_RE, tsToSeconds } from './services/exporters';
+import LiveMeeting from './components/LiveMeeting';
 import * as db from './services/db';
-import type { Note, StoredNote } from './types';
+import type { Note, StoredNote, MeetingNotes } from './types';
 import Recorder from './components/VoiceRecorder';
 import { PlusIcon, ChevronLeftIcon, TrashIcon, DownloadIcon, MicIcon, ScreenRecordIcon, UploadIcon, SearchIcon, RefreshIcon } from './components/Icons';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const LOCAL_STORAGE_MAX_BYTES = 15 * 1024 * 1024;
+// Live meetings keep a larger recording, because click-to-replay is the point.
+const LIVE_STORAGE_MAX_BYTES = 150 * 1024 * 1024;
 
 // ─── Speaker colour coding ───────────────────────────────────────────────────
 
@@ -22,20 +26,60 @@ function getSpeakerColor(n: number): string {
     return speakerColorCache[n];
 }
 
-function renderTranscription(text: string): React.ReactNode {
-    const parts = text.split(/(Speaker \d+:)/g);
-    return parts.map((part, i) => {
-        const match = part.match(/^Speaker (\d+):$/);
-        if (match) {
-            return (
-                <span key={i} style={{ color: getSpeakerColor(parseInt(match[1], 10)), fontWeight: 700, fontFamily: "'Space Mono', monospace" }}>
-                    {part}
-                </span>
-            );
-        }
-        return <span key={i}>{part}</span>;
+function renderTranscription(text: string, names?: Record<string, string>, onSeek?: (seconds: number) => void): React.ReactNode {
+    return text.split('\n').map((line, li) => {
+        const ts = line.match(TS_RE);
+        const rest = ts ? line.slice(ts[0].length) : line;
+        const parts = rest.split(/(\bSpeaker \d+:)/g);
+        return (
+            <div key={li}>
+                {ts && (
+                    <button type="button" onClick={() => onSeek?.(tsToSeconds(ts[0]) ?? 0)}
+                        title={onSeek ? 'Play from here' : undefined}
+                        className="text-brand-primary/80 hover:text-brand-primary mr-1 font-mono">{ts[0]}</button>
+                )}
+                {parts.map((part, i) => {
+                    const m = part.match(/^Speaker (\d+):$/);
+                    if (!m) return <span key={i}>{part}</span>;
+                    const label = names?.[`Speaker ${m[1]}`]?.trim() || `Speaker ${m[1]}`;
+                    return <span key={i} style={{ color: getSpeakerColor(parseInt(m[1], 10)), fontWeight: 700 }}>{label}:</span>;
+                })}
+            </div>
+        );
     });
 }
+
+// Simple fishbone: the problem at the head, one bone per cause category.
+const Fishbone: React.FC<{ data: NonNullable<Note['fishbone']> }> = ({ data }) => {
+    const causes = data.causes.slice(0, 6);
+    const W = 760, H = 300, spineY = H / 2, headX = W - 170;
+    const slots = Math.ceil(causes.length / 2);
+    const gap = (headX - 40) / Math.max(slots, 1);
+    return (
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Cause and effect diagram for ${data.problem}`}>
+            <line x1={20} y1={spineY} x2={headX} y2={spineY} stroke="#00d46e" strokeWidth={2} />
+            <rect x={headX} y={spineY - 34} width={160} height={68} rx={8} fill="rgba(0,212,110,0.12)" stroke="#00d46e" />
+            <foreignObject x={headX + 6} y={spineY - 30} width={148} height={60}>
+                <div style={{ color: '#e6f5ec', fontSize: 12, fontWeight: 700, lineHeight: 1.25 }}>{data.problem}</div>
+            </foreignObject>
+            {causes.map((c, i) => {
+                const top = i % 2 === 0;
+                const x = 40 + gap * Math.floor(i / 2) + gap * 0.5;
+                const y = top ? 40 : H - 40;
+                return (
+                    <g key={i}>
+                        <line x1={x} y1={y} x2={x + 50} y2={spineY} stroke="rgba(0,212,110,0.6)" strokeWidth={1.5} />
+                        <text x={x - 4} y={top ? y - 12 : y + 22} fill="#00d46e" fontSize={12} fontWeight={700}>{c.category}</text>
+                        {c.items.slice(0, 3).map((it, j) => (
+                            <text key={j} x={x + 8 + (top ? j * 8 : (2 - j) * 8)} y={top ? y + 16 + j * 15 : y - 30 + j * 15}
+                                fill="#b8d4c4" fontSize={10.5}>{it.length > 34 ? it.slice(0, 33) + '…' : it}</text>
+                        ))}
+                    </g>
+                );
+            })}
+        </svg>
+    );
+};
 
 // ─── PDF export ──────────────────────────────────────────────────────────────
 
@@ -59,7 +103,7 @@ const exportToPdf = (note: Note) => {
     };
 
     line(note.title || 'Meeting Minutes', 18, true, [0, 180, 90]);
-    line('M.O.M IQ — Minutes of Meeting Intelligence by Pithonix AI', 9, false, [80, 140, 110]);
+    line('M.O.M IQ: Minutes of Meeting Intelligence by Pithonix AI', 9, false, [80, 140, 110]);
     line(new Date(note.timestamp).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' }), 10, false, [80, 140, 110]);
     y += 4;
 
@@ -67,15 +111,21 @@ const exportToPdf = (note: Note) => {
     line(note.summary || '', 10);
     y += 2;
 
+    if (note.conclusions?.length) {
+        line('Conclusions', 13, true, [0, 180, 90]);
+        note.conclusions.forEach(c => line(`• ${c.time ? `[${c.time}] ` : ''}${c.text}`, 10));
+        y += 2;
+    }
+
     if (note.actionItems?.length) {
         line('Action Items', 13, true, [0, 180, 90]);
-        note.actionItems.forEach((item, i) => line(`${i + 1}. ${item}`, 10));
+        note.actionItems.forEach((item, i) => line(`${i + 1}. ${note.actionItemTimes?.[i] ? `[${note.actionItemTimes[i]}] ` : ''}${item}`, 10));
         y += 2;
     }
 
     if (note.transcription) {
         line('Full Transcription', 13, true, [0, 180, 90]);
-        line(note.transcription, 9);
+        line(applySpeakerNames(note.transcription, note.speakerNames), 9);
     }
 
     const slug = (note.title || 'meeting').replace(/\s+/g, '-').toLowerCase();
@@ -205,11 +255,82 @@ const ResultView: React.FC<{
     onDelete: (id: string, downloadFirst: boolean) => Promise<void>;
     onRetry: (id: string) => void;
     onUpdateCompletedItems: (id: string, items: number[]) => void;
+    onUpdateNote: (id: string, patch: Partial<StoredNote>) => Promise<void>;
     isMutating: boolean;
-}> = ({ note, onBack, onDelete, onRetry, onUpdateCompletedItems, isMutating }) => {
+}> = ({ note, onBack, onDelete, onRetry, onUpdateCompletedItems, onUpdateNote, isMutating }) => {
     const [completedItems, setCompletedItems] = useState<number[]>(note.completedItems || []);
+    const [names, setNames] = useState<Record<string, string>>(note.speakerNames || {});
+    const [busy, setBusy] = useState<'' | 'regen' | 'ansh' | 'share' | 'docx'>('');
+    const [shareOpen, setShareOpen] = useState(false);
+    const [sharePw, setSharePw] = useState('');
+    const [shareHours, setShareHours] = useState(72);
+    const [shareTranscript, setShareTranscript] = useState(false);
+    const [shareResult, setShareResult] = useState<{ url: string; expiresAt: number; redacted: Record<string, number>; persistent: boolean } | null>(null);
+    const mediaRef = useRef<HTMLMediaElement | null>(null);
 
-    useEffect(() => { setCompletedItems(note.completedItems || []); }, [note.id]);
+    useEffect(() => {
+        setCompletedItems(note.completedItems || []);
+        setNames(note.speakerNames || {});
+        setShareResult(null);
+    }, [note.id]);
+
+    const speakers = React.useMemo(() => listSpeakers(note.transcription || ''), [note.transcription]);
+    const named: Note = { ...note, speakerNames: names, completedItems };
+
+    const seek = (seconds: number) => {
+        const m = mediaRef.current;
+        if (!m) { toast.message('The recording is not stored on this device, so it cannot be replayed.'); return; }
+        m.currentTime = seconds;
+        m.play().catch(() => {});
+        m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    const seekTs = (ts?: string) => { const s = ts ? tsToSeconds(ts) : null; if (s !== null) seek(s); };
+
+    const saveNames = async (next: Record<string, string>) => {
+        setNames(next);
+        await onUpdateNote(note.id, { speakerNames: next });
+    };
+
+    const regenerate = async () => {
+        if (!note.transcription) return;
+        setBusy('regen');
+        try {
+            const n: MeetingNotes = await regenerateNotes(applySpeakerNames(note.transcription, names));
+            await onUpdateNote(note.id, { ...n, completedItems: [] });
+            setCompletedItems([]);
+            toast.success('Notes regenerated.');
+        } catch (e: any) { toast.error(`Could not regenerate: ${e.message}`); }
+        finally { setBusy(''); }
+    };
+
+    const sendToAnsh = async () => {
+        setBusy('ansh');
+        try {
+            await pushToAnsh({ ...named, transcription: applySpeakerNames(note.transcription || '', names) });
+            toast.success('Sent to Ansh. You can now ask Ansh about this meeting.');
+        } catch (e: any) { toast.error(e.message); }
+        finally { setBusy(''); }
+    };
+
+    const makeShare = async () => {
+        setBusy('share');
+        try {
+            const r = await createShareLink({ ...named, transcription: applySpeakerNames(note.transcription || '', names) },
+                { password: sharePw || undefined, expiresInHours: shareHours, includeTranscript: shareTranscript });
+            setShareResult(r);
+        } catch (e: any) { toast.error(`Could not create link: ${e.message}`); }
+        finally { setBusy(''); }
+    };
+
+    const exportDocx = async () => {
+        setBusy('docx');
+        try { downloadBlob(await toDocx(named), `${fileSlug(note)}.docx`); toast.success('Word file downloaded.'); }
+        catch (e: any) { toast.error(`Word export failed: ${e.message}`); }
+        finally { setBusy(''); }
+    };
+    const exportMd = () => { downloadBlob(new Blob([toMarkdown(named)], { type: 'text/markdown;charset=utf-8' }), `${fileSlug(note)}.md`); toast.success('Markdown downloaded.'); };
+    const srt = React.useMemo(() => toSrt(named), [note.transcription, names]);
+    const exportSrt = () => { downloadBlob(new Blob([srt], { type: 'application/x-subrip;charset=utf-8' }), `${fileSlug(note)}.srt`); toast.success('Subtitles downloaded.'); };
 
     const toggleItem = (i: number) => {
         setCompletedItems(prev => {
@@ -221,7 +342,7 @@ const ResultView: React.FC<{
 
     const downloadTxt = () => {
         if (!note.transcription) return;
-        const blob = new Blob([note.transcription], { type: 'text/plain;charset=utf-8' });
+        const blob = new Blob([applySpeakerNames(note.transcription, names)], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement('a'), {
             href: url,
@@ -278,12 +399,29 @@ const ResultView: React.FC<{
                 <Btn onClick={onBack} ariaLabel="Back">
                     <ChevronLeftIcon className="w-4 h-4" /> Back
                 </Btn>
-                <div className="flex gap-2">
-                    <Btn onClick={downloadTxt} ariaLabel="Download TXT">
-                        <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">TXT</span>
+                <div className="flex gap-2 flex-wrap justify-end">
+                    <details className="relative">
+                        <summary className="list-none cursor-pointer flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-semibold text-text-primary"
+                            style={{ ...GLASS_SUBTLE, border: '1px solid rgba(0,212,110,0.15)' }}>
+                            <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">Export</span>
+                        </summary>
+                        <div className="absolute right-0 mt-2 z-20 w-48 rounded-xl p-1.5 flex flex-col" style={GLASS}>
+                            {[
+                                { label: 'PDF', run: () => { exportToPdf(named); toast.success('PDF exported.'); } },
+                                { label: busy === 'docx' ? 'Word (.docx)...' : 'Word (.docx)', run: exportDocx },
+                                { label: 'Markdown (.md)', run: exportMd },
+                                ...(srt ? [{ label: 'Subtitles (.srt)', run: exportSrt }] : []),
+                                { label: 'Plain text (.txt)', run: downloadTxt },
+                            ].map(o => (
+                                <button key={o.label} onClick={o.run} className="text-left px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-white/5">{o.label}</button>
+                            ))}
+                        </div>
+                    </details>
+                    <Btn onClick={() => setShareOpen(true)} ariaLabel="Share">
+                        <span>Share</span>
                     </Btn>
-                    <Btn onClick={() => { exportToPdf(note); toast.success('PDF exported.'); }} ariaLabel="PDF">
-                        <DownloadIcon className="w-4 h-4" /><span className="hidden sm:inline">PDF</span>
+                    <Btn onClick={sendToAnsh} ariaLabel="Send to Ansh" disabled={busy === 'ansh'}>
+                        <span>{busy === 'ansh' ? 'Sending...' : 'To Ansh'}</span>
                     </Btn>
                     <Btn onClick={handleDownloadAndDelete} variant="danger" ariaLabel="Delete" disabled={isMutating}>
                         <TrashIcon className="w-4 h-4" /><span className="hidden sm:inline">{isMutating ? '...' : 'Delete'}</span>
@@ -298,11 +436,11 @@ const ResultView: React.FC<{
 
                 <div className="p-6 sm:p-8 space-y-5">
                     {/* Media player */}
-                    {note.mediaUrl && note.recordingType === 'voice' && (
-                        <audio controls src={note.mediaUrl} className="w-full rounded-lg" style={{ accentColor: '#00d46e' }} />
+                    {note.mediaUrl && note.recordingType !== 'screen' && (
+                        <audio ref={el => { mediaRef.current = el; }} controls src={note.mediaUrl} className="w-full rounded-lg" style={{ accentColor: '#00d46e' }} />
                     )}
                     {note.mediaUrl && note.recordingType === 'screen' && (
-                        <video controls src={note.mediaUrl} className="w-full rounded-xl bg-black aspect-video" />
+                        <video ref={el => { mediaRef.current = el; }} controls src={note.mediaUrl} className="w-full rounded-xl bg-black aspect-video" />
                     )}
                     {!note.mediaUrl && (
                         <div className="py-3 px-4 rounded-lg text-text-muted text-xs font-mono text-center"
@@ -329,7 +467,31 @@ const ResultView: React.FC<{
                     <Panel>
                         <SectionLabel>Executive Summary</SectionLabel>
                         <p className="text-text-secondary leading-relaxed text-sm">{note.summary}</p>
+                        {!!note.topics?.length && (
+                            <div className="flex flex-wrap gap-2 mt-3">
+                                {note.topics.map((t, i) => <span key={i} className="text-[11px] font-mono px-2 py-0.5 rounded" style={{ border: '1px solid rgba(0,212,110,0.2)', color: 'rgba(0,212,110,0.8)' }}>{t}</span>)}
+                            </div>
+                        )}
+                        {note.transcription && (
+                            <button onClick={regenerate} disabled={busy === 'regen'} className="mt-3 text-xs font-mono text-brand-primary/70 hover:text-brand-primary disabled:opacity-50">
+                                {busy === 'regen' ? 'Regenerating notes...' : '↻ Regenerate notes (uses the speaker names below)'}
+                            </button>
+                        )}
                     </Panel>
+
+                    {!!note.conclusions?.length && (
+                        <Panel>
+                            <SectionLabel>Conclusions</SectionLabel>
+                            <ul className="space-y-2">
+                                {note.conclusions.map((c, i) => (
+                                    <li key={i} className="text-sm text-text-secondary leading-relaxed">
+                                        {c.time && <button onClick={() => seekTs(c.time)} title="Play the moment this was said" className="font-mono text-xs text-brand-primary mr-2 hover:underline">{c.time}</button>}
+                                        {applySpeakerNames(c.text, names)}
+                                    </li>
+                                ))}
+                            </ul>
+                        </Panel>
+                    )}
 
                     {/* Action items */}
                     <Panel>
@@ -360,23 +522,107 @@ const ResultView: React.FC<{
                                         className={`cursor-pointer text-sm leading-relaxed transition-all duration-200 ${completedItems.includes(i)
                                             ? 'line-through text-text-muted'
                                             : 'text-text-secondary group-hover:text-text-primary'}`}>
-                                        {item}
+                                        {applySpeakerNames(item, names)}
                                     </label>
+                                    {note.actionItemTimes?.[i] && (
+                                        <button onClick={() => seekTs(note.actionItemTimes![i])} title="Play the moment this was agreed"
+                                            className="ml-auto flex-shrink-0 font-mono text-xs text-brand-primary/80 hover:text-brand-primary">{note.actionItemTimes[i]}</button>
+                                    )}
                                 </div>
                             )) : <p className="text-text-muted text-sm font-mono">// no action items identified</p>}
                         </div>
                     </Panel>
 
+                    {note.fishbone && (
+                        <Panel>
+                            <SectionLabel>Cause and Effect</SectionLabel>
+                            <Fishbone data={note.fishbone} />
+                        </Panel>
+                    )}
+
+                    {speakers.length > 0 && (
+                        <Panel>
+                            <SectionLabel>Speakers</SectionLabel>
+                            <p className="text-xs text-text-muted mb-3">Name each speaker. Give two speakers the same name to merge them. Names apply to the transcript and every export.</p>
+                            <div className="grid sm:grid-cols-2 gap-2">
+                                {speakers.map(sp => (
+                                    <label key={sp} className="flex items-center gap-2 text-sm">
+                                        <span className="w-20 flex-shrink-0 font-mono text-xs" style={{ color: getSpeakerColor(parseInt(sp.split(' ')[1], 10)) }}>{sp}</span>
+                                        <input defaultValue={names[sp] || ''} placeholder="Name"
+                                            onBlur={e => { const v = e.target.value.trim(); if ((names[sp] || '') !== v) saveNames({ ...names, [sp]: v }); }}
+                                            className="flex-1 rounded-lg px-3 py-1.5 bg-black/30 text-text-primary text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary/40"
+                                            style={{ border: '1px solid rgba(0,212,110,0.12)' }} />
+                                    </label>
+                                ))}
+                            </div>
+                        </Panel>
+                    )}
+
+                    {!!note.glossary?.length && (
+                        <Panel>
+                            <SectionLabel>Names and Terms</SectionLabel>
+                            <ul className="space-y-1.5 text-sm">
+                                {note.glossary.map((g, i) => <li key={i} className="text-text-secondary"><b className="text-text-primary">{g.term}</b>: {g.note}</li>)}
+                            </ul>
+                            <p className="text-xs text-text-muted mt-3">Misspelt? Add the right spelling to your Word list on the home screen, and future meetings will use it.</p>
+                        </Panel>
+                    )}
+
                     {/* Transcription */}
                     <Panel>
                         <SectionLabel>Full Transcription</SectionLabel>
-                        <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-text-secondary font-mono pr-2"
+                        <div className="max-h-96 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-text-secondary font-mono pr-2"
                             style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(0,212,110,0.2) transparent' }}>
-                            {renderTranscription(note.transcription || '')}
+                            {renderTranscription(note.transcription || '', names, seek)}
                         </div>
                     </Panel>
                 </div>
             </div>
+
+            {shareOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setShareOpen(false)}>
+                    <div className="w-full max-w-md rounded-2xl p-6" style={GLASS} onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold font-display mb-1">Share these notes</h3>
+                        <p className="text-xs text-text-secondary mb-4">Keys, phone numbers, card, account, Aadhaar and PAN numbers are removed automatically before the link is created.</p>
+                        {!shareResult ? (
+                            <div className="space-y-3">
+                                <label className="block text-sm">Password (optional)
+                                    <input type="text" value={sharePw} onChange={e => setSharePw(e.target.value)} placeholder="Leave empty for no password"
+                                        className="mt-1 w-full rounded-lg px-3 py-2 bg-black/30 text-text-primary focus:outline-none" style={{ border: '1px solid rgba(0,212,110,0.15)' }} />
+                                </label>
+                                <label className="block text-sm">Link expires after
+                                    <select value={shareHours} onChange={e => setShareHours(+e.target.value)}
+                                        className="mt-1 w-full rounded-lg px-3 py-2 bg-black/30 text-text-primary" style={{ border: '1px solid rgba(0,212,110,0.15)' }}>
+                                        <option value={24}>1 day</option><option value={72}>3 days</option><option value={168}>7 days</option><option value={720}>30 days</option>
+                                    </select>
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" checked={shareTranscript} onChange={e => setShareTranscript(e.target.checked)} />
+                                    Include the full transcript
+                                </label>
+                                <div className="flex gap-2 pt-2">
+                                    <Btn onClick={makeShare} variant="primary" ariaLabel="Create link" disabled={busy === 'share'}>{busy === 'share' ? 'Creating...' : 'Create link'}</Btn>
+                                    <Btn onClick={() => setShareOpen(false)} ariaLabel="Cancel">Cancel</Btn>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                <input readOnly value={shareResult.url} onFocus={e => e.target.select()}
+                                    className="w-full rounded-lg px-3 py-2 bg-black/30 text-text-primary font-mono text-xs" style={{ border: '1px solid rgba(0,212,110,0.15)' }} />
+                                <p className="text-xs text-text-secondary">Expires {new Date(shareResult.expiresAt).toLocaleString('en-IN')}.{sharePw ? ' Send the password separately.' : ''}</p>
+                                {Object.keys(shareResult.redacted).length > 0 && (
+                                    <p className="text-xs text-amber-300">Removed before sharing: {Object.entries(shareResult.redacted).map(([k, v]) => `${v} × ${k.toLowerCase()}`).join(', ')}.</p>
+                                )}
+                                {!shareResult.persistent && <p className="text-xs text-text-muted">Note: this link stops working if the server restarts (no storage volume is attached yet).</p>}
+                                <div className="flex gap-2">
+                                    <Btn onClick={() => { navigator.clipboard?.writeText(shareResult.url); toast.success('Link copied.'); }} variant="primary" ariaLabel="Copy link">Copy link</Btn>
+                                    <Btn onClick={() => { setShareOpen(false); setShareResult(null); setSharePw(''); }} ariaLabel="Done">Done</Btn>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -386,10 +632,12 @@ const ResultView: React.FC<{
 const NewNoteOptions: React.FC<{
     onSelect: (mode: 'voice' | 'screen') => void;
     onUpload: () => void;
+    onLive: () => void;
     onCancel: () => void;
     disabled: boolean;
-}> = ({ onSelect, onUpload, onCancel, disabled }) => {
+}> = ({ onSelect, onUpload, onLive, onCancel, disabled }) => {
     const options = [
+        { id: 'live' as const, Icon: MicIcon, label: 'Live Meeting', sub: 'Notes build while people talk', badge: 'LIVE' },
         { id: 'voice' as const, Icon: MicIcon, label: 'Voice Recording', sub: 'Capture from microphone', badge: 'MIC' },
         { id: 'screen' as const, Icon: ScreenRecordIcon, label: 'Screen + Audio', sub: 'Record screen & speaker', badge: 'SCREEN' },
         { id: 'upload' as const, Icon: UploadIcon, label: 'File Upload', sub: 'Audio or video · No size limit', badge: 'UPLOAD' },
@@ -411,10 +659,10 @@ const NewNoteOptions: React.FC<{
                             <p className="text-xs text-text-secondary font-mono mt-0.5">Select capture method</p>
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {options.map(({ id, Icon, label, sub, badge }) => (
                             <button key={id}
-                                onClick={() => id === 'upload' ? onUpload() : onSelect(id)}
+                                onClick={() => id === 'upload' ? onUpload() : id === 'live' ? onLive() : onSelect(id)}
                                 disabled={disabled}
                                 className="mode-card group relative flex flex-col items-center text-center p-6 sm:p-7 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 touch-manipulation select-none"
                                 style={{
@@ -467,7 +715,7 @@ const NoteCard: React.FC<{
         || note.summary
         || `Note — ${new Date(note.timestamp).toLocaleDateString('en-IN')}`;
 
-    const Icon = note.recordingType === 'voice' ? MicIcon : note.recordingType === 'screen' ? ScreenRecordIcon : UploadIcon;
+    const Icon = note.recordingType === 'voice' || note.recordingType === 'live' ? MicIcon : note.recordingType === 'screen' ? ScreenRecordIcon : UploadIcon;
 
     const statusColor = note.status === 'failed' ? '#ef4444' : note.status === 'processing' ? '#f59e0b' : '#00d46e';
 
@@ -540,7 +788,9 @@ const EmptyState: React.FC<{ onNew: () => void; disabled: boolean }> = ({ onNew,
 
 const App = () => {
     const [notes, setNotes] = useState<Note[]>([]);
-    const [view, setView] = useState<'list' | 'new' | 'recorder' | 'result'>('list');
+    const [view, setView] = useState<'list' | 'new' | 'recorder' | 'result' | 'live'>('list');
+    const [wordListOpen, setWordListOpen] = useState(false);
+    const [wordListDraft, setWordListDraft] = useState('');
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [recorderMode, setRecorderMode] = useState<'voice' | 'screen'>('voice');
     const [searchTerm, setSearchTerm] = useState('');
@@ -566,7 +816,8 @@ const App = () => {
             const result = await generateNoteFromRecording(mediaBlob, (label) => {
                 db.updateNote(id, { summary: `${label}...` }).then(loadNotes).catch(() => {});
             });
-            await db.updateNote(id, { status: 'ready', title: result.title, transcription: result.transcription, summary: result.summary, actionItems: result.actionItems });
+            const { transcription, ...notesOnly } = result;
+            await db.updateNote(id, { status: 'ready', transcription, ...notesOnly });
             toast.success(result.title || 'Note ready.');
         } catch (e: any) {
             const msg = getApiErrorMessage(e);
@@ -605,6 +856,34 @@ const App = () => {
         setView('list');
         toast.info('Processing your recording...');
         await processNote(id, mediaBlob, {});
+    }, [loadNotes]);
+
+    const handleUpdateNote = useCallback(async (id: string, patch: Partial<StoredNote>) => {
+        try {
+            await db.updateNote(id, patch);
+            setSelectedNote(prev => prev && prev.id === id ? { ...prev, ...patch } as Note : prev);
+            await loadNotes();
+        } catch (e: any) { toast.error(`Could not save: ${e.message}`); }
+    }, [loadNotes]);
+
+    const handleSaveLive = useCallback(async (data: { transcription: string; notes: MeetingNotes | null; mediaBlob: Blob | null; duration: number }) => {
+        const id = `note-${Date.now()}`;
+        const hasText = !!data.transcription.trim();
+        const note: StoredNote = {
+            id, timestamp: new Date(Date.now() - data.duration * 1000).toISOString(),
+            status: hasText ? 'ready' : 'failed', duration: data.duration, recordingType: 'live', isLive: true,
+            transcription: data.transcription,
+            ...(data.notes || { title: 'Live meeting', summary: hasText ? 'Notes could not be generated. Open the note and tap Regenerate notes.' : '', actionItems: [] }),
+            error: hasText ? undefined : 'No speech was captured during this live meeting.',
+            mediaBlob: data.mediaBlob && data.mediaBlob.size <= LIVE_STORAGE_MAX_BYTES ? data.mediaBlob : undefined,
+        };
+        try {
+            await db.addNote(note);
+            await loadNotes();
+            toast.success(note.title || 'Live meeting saved.');
+            const fresh = await db.getNoteWithMedia(id);
+            if (fresh) { setSelectedNote({ ...fresh, mediaUrl: fresh.mediaBlob ? URL.createObjectURL(fresh.mediaBlob) : undefined } as Note); setView('result'); } else setView('list');
+        } catch (e: any) { toast.error(`Could not save the meeting: ${e.message}`); setView('list'); }
     }, [loadNotes]);
 
     const handleUpdateCompletedItems = useCallback(async (id: string, items: number[]) => {
@@ -694,6 +973,7 @@ const App = () => {
                 return <NewNoteOptions
                     onSelect={mode => { setSessionId(`session-${Date.now()}`); setRecorderMode(mode); setView('recorder'); }}
                     onUpload={() => fileInputRef.current?.click()}
+                    onLive={() => setView('live')}
                     onCancel={() => setView('list')}
                     disabled={!!mutatingId} />;
 
@@ -705,6 +985,9 @@ const App = () => {
                     onCancelRecording={() => { setView('list'); setSessionId(null); }}
                     onError={msg => { toast.error(msg); setView('list'); setSessionId(null); }} />;
 
+            case 'live':
+                return <LiveMeeting onSave={handleSaveLive} onCancel={() => setView('list')} />;
+
             case 'result':
                 return selectedNote && <ResultView
                     note={selectedNote}
@@ -712,6 +995,7 @@ const App = () => {
                     onDelete={handleDeleteNote}
                     onRetry={handleRetry}
                     onUpdateCompletedItems={handleUpdateCompletedItems}
+                    onUpdateNote={handleUpdateNote}
                     isMutating={mutatingId === selectedNote.id} />;
 
             default: {
@@ -759,6 +1043,13 @@ const App = () => {
                                     style={GLASS_SUBTLE}
                                     className={`min-w-[44px] h-[44px] flex items-center justify-center text-text-secondary rounded-xl border border-brand-primary/10 transition-colors disabled:opacity-40 touch-manipulation flex-shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}>
                                     <RefreshIcon className="w-4 h-4" />
+                                </button>
+
+                                {/* Word list: names and terms the transcriber must spell right */}
+                                <button onClick={() => { setWordListDraft(getWordList()); setWordListOpen(true); }}
+                                    aria-label="Word list" disabled={!!mutatingId || selectionMode} style={GLASS_SUBTLE}
+                                    className="h-[44px] px-3 flex items-center justify-center text-text-secondary text-xs font-semibold rounded-xl border border-brand-primary/10 disabled:opacity-40 touch-manipulation flex-shrink-0">
+                                    Word list
                                 </button>
 
                                 {/* Desktop-only extra controls */}
@@ -832,6 +1123,21 @@ const App = () => {
             </div>
 
             <Toaster position="top-right" theme="dark" richColors closeButton />
+            {wordListOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setWordListOpen(false)}>
+                    <div className="w-full max-w-md rounded-2xl p-6" style={GLASS} onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold font-display mb-1">Word list</h3>
+                        <p className="text-xs text-text-secondary mb-3">Names, clients and product terms that must be spelt exactly. One per line or comma separated. Used for every new recording and live meeting on this device.</p>
+                        <textarea value={wordListDraft} onChange={e => setWordListDraft(e.target.value)} rows={8}
+                            placeholder={'Amjad\nBosch\nGCCE2\nKokapet'}
+                            className="w-full rounded-lg px-3 py-2 bg-black/30 text-text-primary text-sm font-mono focus:outline-none" style={{ border: '1px solid rgba(0,212,110,0.15)' }} />
+                        <div className="flex gap-2 mt-3">
+                            <Btn onClick={() => { setWordList(wordListDraft); setWordListOpen(false); toast.success('Word list saved.'); }} variant="primary" ariaLabel="Save">Save</Btn>
+                            <Btn onClick={() => setWordListOpen(false)} ariaLabel="Cancel">Cancel</Btn>
+                        </div>
+                    </div>
+                </div>
+            )}
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="audio/*,video/*" className="hidden" />
 
             {/* Top accent line */}
